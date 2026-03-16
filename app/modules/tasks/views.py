@@ -1,3 +1,4 @@
+import asyncio
 from http import HTTPStatus
 from typing import Annotated
 
@@ -5,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.schema import MessageResponse
 from app.integrations.call_manager import CallManager
+from app.modules.notifications.email_service import EmailService
 from app.modules.tasks.exceptions import InvalidTaskDataError, TaskNotCancellableError, TaskNotFoundError
 from app.modules.tasks.schema import TaskCreate, TaskListResponse, TaskResponse, TaskStatsResponse, TaskStatus
 from app.modules.tasks.service import TaskService
@@ -45,6 +47,15 @@ async def create_task_view(
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
     except InvalidTaskDataError as e:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e
+
+    if task.scheduled_time:
+        asyncio.create_task(
+            EmailService().send_task_scheduled(
+                current_user.email,
+                task.target_phone,
+                task.scheduled_time.strftime("%Y-%m-%d %H:%M"),
+            )
+        )
 
     return _task_to_response(task)
 

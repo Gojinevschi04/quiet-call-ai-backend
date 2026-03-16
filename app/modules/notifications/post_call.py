@@ -49,12 +49,14 @@ class PostCallProcessor:
                 to_email=user_email,
                 task_phone=task.target_phone,
                 summary=task.summary or "Call completed successfully.",
+                task_id=task.id,
             )
         elif task.status == TaskStatus.FAILED:
             await self.email_service.send_task_failure(
                 to_email=user_email,
                 task_phone=task.target_phone,
                 error_reason=task.error_reason or "Unknown error.",
+                task_id=task.id,
             )
 
     async def _archive_logs(self, task: Task) -> None:

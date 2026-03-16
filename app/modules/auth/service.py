@@ -4,7 +4,7 @@ import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
 
-from app.modules.auth.auth_handler import create_access_token, create_refresh_token, decode_token
+from app.modules.auth.auth_handler import create_access_token, create_refresh_token, create_reset_token, decode_token
 from app.modules.auth.schema import TokenResponse
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
@@ -39,6 +39,10 @@ class AuthService:
             access_token=create_access_token(user_id),
             refresh_token=create_refresh_token(user_id),
         )
+
+    @staticmethod
+    def create_reset_token(user_id: int) -> str:
+        return create_reset_token(user_id)
 
     @staticmethod
     def refresh_access_token(refresh_token: str) -> TokenResponse:

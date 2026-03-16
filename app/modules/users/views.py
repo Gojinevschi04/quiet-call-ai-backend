@@ -1,8 +1,10 @@
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.schema import MessageResponse
+from app.modules.notifications.email_service import EmailService
 from app.modules.users.middleware import get_current_admin_user, get_current_user
 from app.modules.users.models import User
 from app.modules.users.schema import (
@@ -26,16 +28,25 @@ async def get_profile_view(
     return await user_service.get_profile(current_user.id)
 
 
-@router.put("/me", response_model=UserResponse)
+@router.put("/me")
 async def update_profile_view(
     data: ProfileUpdate,
     user_service: Annotated[UserService, Depends(UserService)],
     current_user: Annotated[User, Depends(get_current_user)],
-) -> UserResponse:
+) -> UserResponse | MessageResponse:
     try:
-        return await user_service.update_profile(current_user.id, data)
+        profile = await user_service.update_profile(current_user.id, data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # Email change requires re-authentication + notify old email
+    if data.email is not None and data.email != current_user.email:
+        asyncio.create_task(EmailService().send_email_changed(current_user.email, data.email))
+        return MessageResponse(
+            message="Profile updated. Please log in again with your new email.",
+            require_reauth=True,
+        )
+    return profile
 
 
 @router.post("/me/change-password")
@@ -48,7 +59,8 @@ async def change_password_view(
         await user_service.change_password(current_user.id, data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    return MessageResponse(message="Password changed successfully")
+    asyncio.create_task(EmailService().send_password_changed(current_user.email))
+    return MessageResponse(message="Password changed successfully", require_reauth=True)
 
 
 @router.post("/", response_model=UserResponse)
