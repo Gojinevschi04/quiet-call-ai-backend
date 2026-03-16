@@ -4,8 +4,10 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.core.logging import get_logger
-from app.integrations.interfaces import ILLMProvider, IVoiceProvider
+from app.integrations.conversation import ConversationManager
+from app.integrations.interfaces import ILLMProvider
 from app.integrations.openai_adapter import OpenAIAdapter
+from app.integrations.prompt_builder import PromptBuilder
 from app.integrations.twilio_adapter import TwilioAdapter
 from app.modules.calls.models import CallSession, LogLine
 from app.modules.calls.repository import CallSessionRepository, LogLineRepository
@@ -37,13 +39,14 @@ class CallManager:
         self.call_session_repository = call_session_repository
         self.log_line_repository = log_line_repository
         self.user_repository = user_repository
-        self._voice: IVoiceProvider = TwilioAdapter()
+        self._voice: TwilioAdapter = TwilioAdapter()
         self._llm: ILLMProvider = OpenAIAdapter()
         self._post_call = PostCallProcessor(
             task_repository=task_repository,
             user_repository=user_repository,
             call_session_repository=call_session_repository,
             log_line_repository=log_line_repository,
+            template_repository=template_repository,
         )
 
     async def execute_task(self, task_id: int, user_id: int) -> Task:
@@ -64,108 +67,37 @@ class CallManager:
 
         call_session = CallSession(task_id=task.id, start_time=datetime.now())
         call_session = await self.call_session_repository.create(call_session)
-        log_lines: list[LogLine] = []
+        callback_url = f"{self._get_callback_base()}/webhooks/calls/{task.id}"
+        conv = ConversationManager(MAX_DIALOG_TURNS, MAX_RETRY_ON_NOISE)
 
         try:
-            system_prompt = self._build_system_prompt(template.base_script, task.slot_data)
+            lang = template.language or "en"
+            system_prompt = self._build_system_prompt(template.base_script, task.slot_data, lang)
 
-            # 1. Initiate the call (with retry on busy/no-answer)
             call_sid = await self._voice.initiate_call(
                 to_phone=task.target_phone,
-                callback_url=f"{self._get_callback_base()}/webhooks/calls/{task.id}",
+                callback_url=callback_url,
             )
-            logger.info("Call SID: %s for task %d", call_sid, task.id)
+            logger.info("Call SID: %s for task %d (language: %s)", call_sid, task.id, lang)
+            await self._wait_for_answer(call_sid)
 
-            # 2. Generate opening message
-            conversation_history: list[dict[str, str]] = []
-            noise_retries = 0
+            opening = await self._llm.generate_response(conv.history, system_prompt)
+            conv.add_agent_message(opening, call_session.id)
+            interlocutor_text = await self._voice.say_and_gather(call_sid, opening, callback_url, lang)
 
-            opening = await self._llm.generate_response(conversation_history, system_prompt)
-            conversation_history.append({"role": "assistant", "content": opening})
-            log_lines.append(self._create_log_line(call_session.id, Speaker.AGENT, opening))
+            await self._run_dialog_loop(
+                call_sid, conv, call_session, system_prompt, callback_url, lang, interlocutor_text
+            )
 
-            # 3. Synthesize and play opening audio to the call
-            opening_audio = await self._llm.synthesize(opening)
-            await self._voice.play_audio(call_sid, opening_audio)
-
-            # 4. Dialog loop: listen → STT → intent → generate → TTS → play
-            for _turn in range(MAX_DIALOG_TURNS):
-                # Listen for interlocutor speech
-                audio_bytes = await self._voice.listen(call_sid)
-
-                if not audio_bytes or len(audio_bytes) < 100:
-                    # No meaningful audio captured — likely silence/noise
-                    noise_retries += 1
-                    if noise_retries >= MAX_RETRY_ON_NOISE:
-                        log_lines.append(
-                            self._create_log_line(call_session.id, Speaker.AGENT, "[Max noise retries reached]")
-                        )
-                        break
-                    apology = "I'm sorry, I didn't catch that. Could you please repeat?"
-                    conversation_history.append({"role": "assistant", "content": apology})
-                    log_lines.append(self._create_log_line(call_session.id, Speaker.AGENT, apology))
-                    apology_audio = await self._llm.synthesize(apology)
-                    await self._voice.play_audio(call_sid, apology_audio)
-                    continue
-
-                # STT: transcribe the audio
-                noise_retries = 0
-                interlocutor_text = await self._llm.transcribe(audio_bytes)
-
-                if not interlocutor_text.strip():
-                    noise_retries += 1
-                    if noise_retries >= MAX_RETRY_ON_NOISE:
-                        break
-                    continue
-
-                # Intent detection (NLU)
-                detected_intent = await self._llm.detect_intent(interlocutor_text)
-
-                conversation_history.append({"role": "user", "content": interlocutor_text})
-                log_lines.append(
-                    self._create_log_line(
-                        call_session.id, Speaker.INTERLOCUTOR, interlocutor_text, detected_intent
-                    )
-                )
-
-                # Handle refusal intent
-                if detected_intent == "rejection":
-                    farewell = "I understand. Thank you for your time. Goodbye. [OBJECTIVE_FAILED]"
-                    conversation_history.append({"role": "assistant", "content": farewell})
-                    log_lines.append(self._create_log_line(call_session.id, Speaker.AGENT, farewell))
-                    farewell_audio = await self._llm.synthesize(farewell)
-                    await self._voice.play_audio(call_sid, farewell_audio)
-                    break
-
-                # Generate AI response
-                agent_reply = await self._llm.generate_response(conversation_history, system_prompt)
-                conversation_history.append({"role": "assistant", "content": agent_reply})
-                log_lines.append(self._create_log_line(call_session.id, Speaker.AGENT, agent_reply))
-
-                # Synthesize and play response
-                reply_audio = await self._llm.synthesize(agent_reply)
-                await self._voice.play_audio(call_sid, reply_audio)
-
-                if self._is_conversation_complete(agent_reply):
-                    break
-
-            # 5. End the call
             await self._voice.hangup(call_sid)
-
             call_session.duration = int((datetime.now() - call_session.start_time).total_seconds())
             call_session.recording_uri = await self._voice.get_recording_url(call_sid)
             await self.call_session_repository.update(call_session)
 
-            # 6. Generate summary
-            summary = await self._generate_summary(conversation_history)
-            objective_achieved = any(
-                "[OBJECTIVE_ACHIEVED]" in msg.get("content", "")
-                for msg in conversation_history
-                if msg["role"] == "assistant"
-            )
-            task.status = TaskStatus.COMPLETED if objective_achieved else TaskStatus.FAILED
+            summary = await self._generate_summary(conv, lang)
+            task.status = TaskStatus.COMPLETED if conv.has_objective_achieved() else TaskStatus.FAILED
             task.summary = summary
-            if not objective_achieved:
+            if not conv.has_objective_achieved():
                 task.error_reason = "Objective not achieved during conversation"
 
         except Exception as e:
@@ -175,42 +107,75 @@ class CallManager:
 
         await self.task_repository.update(task)
 
-        if log_lines:
-            await self.log_line_repository.create_many(log_lines)
+        if conv.log_lines:
+            await self.log_line_repository.create_many(conv.log_lines)
 
         logger.info("Task %d finished with status: %s", task.id, task.status)
-
         await self._post_call.process(task)
-
         return task
 
-    def _build_system_prompt(self, base_script: str, slot_data: dict[str, str]) -> str:
-        prompt = (
-            "You are a voice assistant making a phone call on behalf of a user. "
-            "Follow this script as a guide, but adapt naturally to the conversation.\n\n"
-            f"Script: {base_script}\n\n"
-        )
-        if slot_data:
-            prompt += "Key information to use:\n"
-            for key, value in slot_data.items():
-                prompt += f"- {key.replace('_', ' ').title()}: {value}\n"
+    async def _run_dialog_loop(
+        self,
+        call_sid: str,
+        conv: ConversationManager,
+        call_session: CallSession,
+        system_prompt: str,
+        callback_url: str,
+        lang: str,
+        interlocutor_text: str,
+    ) -> None:
+        for _turn in range(conv.max_turns):
+            if not interlocutor_text.strip():
+                conv.noise_retries += 1
+                if conv.noise_retries >= conv.max_noise_retries:
+                    conv.add_agent_message("[Max noise retries reached]", call_session.id)
+                    break
+                apology = "I'm sorry, I didn't catch that. Could you please repeat?"
+                conv.add_agent_message(apology, call_session.id)
+                interlocutor_text = await self._voice.say_and_gather(call_sid, apology, callback_url, lang)
+                continue
 
-        prompt += (
-            "\nIMPORTANT: Be polite and natural. Confirm details before ending. "
-            "When the objective is achieved, end politely and include [OBJECTIVE_ACHIEVED] in your final message. "
-            "If the objective clearly cannot be achieved (refusal, unavailability), include [OBJECTIVE_FAILED]. "
-            "Keep responses concise (1-2 sentences) since this is a phone conversation."
-        )
-        return prompt
+            conv.noise_retries = 0
+            detected_intent = await self._llm.detect_intent(interlocutor_text)
+            conv.add_interlocutor_message(interlocutor_text, detected_intent, call_session.id)
 
-    async def _generate_summary(self, conversation_history: list[dict[str, str]]) -> str:
-        summary_prompt = (
-            "Summarize this phone conversation in 2-3 sentences. "
-            "Include the outcome (success/failure) and any confirmed details."
-        )
+            if detected_intent == "rejection":
+                farewell = "I understand. Thank you for your time. Goodbye. [OBJECTIVE_FAILED]"
+                conv.add_agent_message(farewell, call_session.id)
+                await self._voice.say_and_gather(call_sid, farewell, callback_url, lang)
+                break
+
+            agent_reply = await self._llm.generate_response(conv.history, system_prompt)
+            conv.add_agent_message(agent_reply, call_session.id)
+
+            if conv.is_complete(agent_reply):
+                await self._voice.say_and_gather(call_sid, agent_reply, callback_url, lang)
+                break
+
+            interlocutor_text = await self._voice.say_and_gather(call_sid, agent_reply, callback_url, lang)
+
+    async def _wait_for_answer(self, call_sid: str, max_wait: int = 30) -> None:
+        """Poll call status until it's answered or fails."""
+        import asyncio
+
+        for _ in range(max_wait):
+            status = await self._voice.get_call_status(call_sid)
+            if status == "in-progress":
+                logger.info("Call %s answered", call_sid)
+                return
+            if status in ("completed", "busy", "no-answer", "canceled", "failed"):
+                raise RuntimeError(f"Call ended before being answered (status: {status})")
+            await asyncio.sleep(1)
+
+        raise RuntimeError("Call was not answered within timeout")
+
+    def _build_system_prompt(self, base_script: str, slot_data: dict[str, str], language: str = "en") -> str:
+        return PromptBuilder.build_system_prompt(base_script, slot_data, language)
+
+    async def _generate_summary(self, conv: ConversationManager, language: str = "en") -> str:
         return await self._llm.generate_response(
-            [{"role": "user", "content": f"Conversation:\n{self._format_history(conversation_history)}"}],
-            summary_prompt,
+            [{"role": "user", "content": f"Conversation:\n{conv.format_history()}"}],
+            PromptBuilder.build_summary_prompt(language),
         )
 
     def _format_history(self, conversation_history: list[dict[str, str]]) -> str:

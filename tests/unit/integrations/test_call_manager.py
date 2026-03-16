@@ -46,9 +46,9 @@ def _mock_voice() -> MagicMock:
     voice = MagicMock()
     voice.initiate_call = AsyncMock(return_value="CA123")
     voice.hangup = AsyncMock()
+    voice.get_call_status = AsyncMock(return_value="in-progress")
     voice.get_recording_url = AsyncMock(return_value="https://example.com/rec.wav")
-    voice.play_audio = AsyncMock()
-    voice.listen = AsyncMock(return_value=b"")
+    voice.say_and_gather = AsyncMock(return_value="")
     return voice
 
 
@@ -84,18 +84,19 @@ def _mock_repos(
 
 @pytest.mark.asyncio
 async def test_execute_task_success(mock_task: Task, mock_template: DialogTemplate) -> None:
-    """Full successful call: opening → listen → STT → intent → response → hangup."""
+    """Opening achieves objective on first message → completed."""
     task_repo, template_repo, session_repo, log_repo = _mock_repos(mock_task, mock_template)
     voice = _mock_voice()
     llm = _mock_llm()
 
-    # Simulate: opening achieved objective on first message
     llm.generate_response = AsyncMock(
         side_effect=[
             "Hello, I'd like to make an appointment. [OBJECTIVE_ACHIEVED]",
             "Call summary: appointment confirmed.",
         ]
     )
+    # say_and_gather returns empty (no response needed, objective already achieved)
+    voice.say_and_gather = AsyncMock(return_value="")
 
     manager = _make_manager(task_repo, template_repo, session_repo, log_repo, voice, llm)
     result = await manager.execute_task(1, user_id=1)
@@ -103,22 +104,22 @@ async def test_execute_task_success(mock_task: Task, mock_template: DialogTempla
     assert result.status == TaskStatus.COMPLETED
     assert result.summary is not None
     voice.initiate_call.assert_called_once()
-    voice.play_audio.assert_called()  # Audio was played to the call
+    voice.say_and_gather.assert_called()
     voice.hangup.assert_called_once()
-    llm.synthesize.assert_called()  # TTS was used
     manager._post_call.process.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_execute_task_multi_turn(mock_task: Task, mock_template: DialogTemplate) -> None:
-    """Multi-turn dialog: AI speaks → human responds → AI replies → objective achieved."""
+    """Multi-turn: AI speaks → human responds → AI replies → objective achieved."""
     task_repo, template_repo, session_repo, log_repo = _mock_repos(mock_task, mock_template)
     voice = _mock_voice()
     llm = _mock_llm()
 
-    # Turn 1: opening
-    # Turn 2: listen → STT → intent → response with objective
-    voice.listen = AsyncMock(side_effect=[b"x" * 200])
+    # say_and_gather: first call returns human speech, second returns empty
+    voice.say_and_gather = AsyncMock(
+        side_effect=["Yes, March 20 please.", ""]
+    )
     llm.generate_response = AsyncMock(
         side_effect=[
             "Hello, I'd like to book an appointment.",
@@ -126,16 +127,14 @@ async def test_execute_task_multi_turn(mock_task: Task, mock_template: DialogTem
             "Summary: appointment booked for March 20.",
         ]
     )
-    llm.transcribe = AsyncMock(return_value="Yes, March 20 please.")
     llm.detect_intent = AsyncMock(return_value="confirmation")
 
     manager = _make_manager(task_repo, template_repo, session_repo, log_repo, voice, llm)
     result = await manager.execute_task(1, user_id=1)
 
     assert result.status == TaskStatus.COMPLETED
-    llm.transcribe.assert_called_once_with(b"x" * 200)
     llm.detect_intent.assert_called_once_with("Yes, March 20 please.")
-    assert voice.play_audio.call_count >= 2  # opening + response
+    assert voice.say_and_gather.call_count >= 2
 
 
 @pytest.mark.asyncio
@@ -145,33 +144,33 @@ async def test_execute_task_rejection_intent(mock_task: Task, mock_template: Dia
     voice = _mock_voice()
     llm = _mock_llm()
 
-    voice.listen = AsyncMock(side_effect=[b"x" * 200])
+    voice.say_and_gather = AsyncMock(
+        side_effect=["No, I'm not interested.", ""]
+    )
     llm.generate_response = AsyncMock(
         side_effect=[
             "Hello, I'd like to book an appointment.",
             "Summary: Interlocutor rejected the appointment request.",
         ]
     )
-    llm.transcribe = AsyncMock(return_value="No, I'm not interested.")
     llm.detect_intent = AsyncMock(return_value="rejection")
 
     manager = _make_manager(task_repo, template_repo, session_repo, log_repo, voice, llm)
     result = await manager.execute_task(1, user_id=1)
 
-    # Rejection should cause task to complete with FAILED
     assert result.status == TaskStatus.FAILED
     llm.detect_intent.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_execute_task_noise_retry(mock_task: Task, mock_template: DialogTemplate) -> None:
-    """Empty audio triggers noise retry → max retries reached → call ends."""
+    """Empty speech triggers noise retries → max reached → call ends."""
     task_repo, template_repo, session_repo, log_repo = _mock_repos(mock_task, mock_template)
     voice = _mock_voice()
     llm = _mock_llm()
 
-    # All listen calls return empty audio
-    voice.listen = AsyncMock(return_value=b"")
+    # All say_and_gather calls return empty (silence)
+    voice.say_and_gather = AsyncMock(return_value="")
     llm.generate_response = AsyncMock(
         side_effect=[
             "Hello, I'd like to book an appointment.",
@@ -182,9 +181,9 @@ async def test_execute_task_noise_retry(mock_task: Task, mock_template: DialogTe
     manager = _make_manager(task_repo, template_repo, session_repo, log_repo, voice, llm)
     result = await manager.execute_task(1, user_id=1)
 
-    # After 3 noise retries, call ends
     assert result.status == TaskStatus.FAILED
-    assert voice.listen.call_count == 3  # MAX_RETRY_ON_NOISE
+    # Opening say_and_gather + apology retries
+    assert voice.say_and_gather.call_count >= 3
 
 
 @pytest.mark.asyncio

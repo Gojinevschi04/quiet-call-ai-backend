@@ -92,7 +92,7 @@ async def test_get_recording_url() -> None:
         adapter._run_sync = AsyncMock(return_value=[mock_recording])
 
         result = await adapter.get_recording_url("CA123456")
-        assert result == "https://api.twilio.com/2010-04-01/Accounts/AC123/Recordings/RE123.wav"
+        assert result == "https://api.twilio.com/2010-04-01/Accounts/AC123/Recordings/RE123.mp3"
 
 
 @pytest.mark.asyncio

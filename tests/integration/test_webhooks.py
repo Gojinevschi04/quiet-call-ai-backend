@@ -13,7 +13,7 @@ async def test_twilio_call_callback(client: AsyncClient) -> None:
     assert response.status_code == 200
     assert "application/xml" in response.headers["content-type"]
     assert "<Response>" in response.text
-    assert "<Say" in response.text
+    assert "<Pause" in response.text
 
 
 @pytest.mark.asyncio
@@ -116,7 +116,7 @@ async def test_twilio_gather_callback(client: AsyncClient) -> None:
     )
     assert response.status_code == 200
     assert "application/xml" in response.headers["content-type"]
-    assert "<Gather" in response.text
+    assert "<Pause" in response.text
 
 
 @pytest.mark.asyncio
@@ -135,5 +135,4 @@ async def test_twilio_call_callback_returns_gather_twiml(client: AsyncClient) ->
         data={"CallSid": "CA123", "CallStatus": "answered"},
     )
     assert response.status_code == 200
-    assert "<Gather" in response.text
-    assert 'input="speech"' in response.text
+    assert "<Pause" in response.text

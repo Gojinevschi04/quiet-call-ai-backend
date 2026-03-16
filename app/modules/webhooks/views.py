@@ -2,11 +2,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Response
 
-from app.core.config import settings
 from app.core.logging import get_logger
+from app.integrations.twilio_adapter import set_gather_result
 from app.modules.calls.repository import CallSessionRepository
 from app.modules.tasks.repository import TaskRepository
-from app.modules.tasks.schema import TaskStatus
 
 logger = get_logger(__name__)
 
@@ -22,22 +21,15 @@ async def twilio_call_callback(
 ) -> Response:
     """TwiML callback — Twilio requests this when the call connects.
 
-    Returns TwiML with Gather (speech input) so Twilio captures interlocutor audio.
-    The CallManager handles the AI dialog loop via play_audio/listen.
+    Returns minimal TwiML to keep the call alive. The CallManager controls
+    the conversation by updating the call with new TwiML via say_and_gather().
     """
     logger.info("Twilio callback for task %d, SID=%s, status=%s", task_id, CallSid, CallStatus)
 
-    callback_url = f"{settings.BASE_URL}/webhooks/calls/{task_id}"
     twiml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        '<Say voice="Polly.Amy">Hello, please hold while I connect you with our assistant.</Say>'
-        "<Pause length=\"1\"/>"
-        f'<Gather input="speech" action="{callback_url}/gather" '
-        'timeout="10" speechTimeout="auto" language="en-US">'
-        '<Say voice="Polly.Amy">I\'m listening.</Say>'
-        "</Gather>"
-        '<Say voice="Polly.Amy">I didn\'t hear anything. Goodbye.</Say>'
+        "<Pause length=\"30\"/>"
         "</Response>"
     )
     return Response(content=twiml, media_type="application/xml")
@@ -50,25 +42,26 @@ async def twilio_gather_callback(
     Confidence: str = Form(default="0"),
     CallSid: str = Form(default=""),
 ) -> Response:
-    """Receives Twilio Gather speech result.
+    """Receives Twilio Gather speech result and delivers it to the CallManager.
 
-    Twilio transcribes speech on its side and sends us the text.
-    We log it and return TwiML to continue the conversation.
+    The CallManager's say_and_gather() is waiting on an asyncio Future.
+    We resolve that future here with the speech text, so the dialog loop continues.
     """
     logger.info(
-        "Twilio gather for task %d: speech='%s', confidence=%s",
+        "Twilio gather for task %d: SID=%s, speech='%s', confidence=%s",
         task_id,
+        CallSid,
         SpeechResult[:100] if SpeechResult else "",
         Confidence,
     )
 
-    # Continue gathering for the next turn
-    callback_url = f"{settings.BASE_URL}/webhooks/calls/{task_id}"
+    if CallSid:
+        set_gather_result(CallSid, SpeechResult or "")
+
     twiml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        f'<Gather input="speech" action="{callback_url}/gather" '
-        'timeout="10" speechTimeout="auto" language="en-US" />'
+        "<Pause length=\"30\"/>"
         "</Response>"
     )
     return Response(content=twiml, media_type="application/xml")
@@ -83,10 +76,7 @@ async def twilio_status_callback(
     CallStatus: str = Form(default=""),
     CallDuration: str = Form(default="0"),
 ) -> Response:
-    """Twilio status callback — receives call state changes.
-
-    Status flow: initiated → ringing → answered → completed
-    """
+    """Twilio status callback — receives call state changes."""
     logger.info(
         "Twilio status update for task %d: SID=%s, status=%s, duration=%s",
         task_id,
@@ -108,9 +98,6 @@ async def twilio_status_callback(
 
     elif CallStatus in ("busy", "no-answer", "canceled", "failed"):
         logger.warning("Call failed for task %d with status: %s", task_id, CallStatus)
-        # Find any task in IN_PROGRESS that matches and mark it failed
-        # (user_id=0 is a workaround since webhooks don't have user context,
-        # but task_id is unique so we search directly)
         call_session = await call_session_repository.get_by_task_id(task_id)
         if call_session:
             call_session.duration = 0
@@ -126,7 +113,7 @@ async def twilio_recording_callback(
     RecordingUrl: str = Form(default=""),
     RecordingDuration: str = Form(default="0"),
 ) -> Response:
-    """Twilio recording callback — receives the recording URL after recording completes."""
+    """Twilio recording callback — receives the recording URL after call ends."""
     logger.info(
         "Twilio recording for task %d: url=%s, duration=%s",
         task_id,

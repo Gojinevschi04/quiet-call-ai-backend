@@ -1,5 +1,4 @@
 import asyncio
-import base64
 from functools import partial
 
 import httpx
@@ -14,6 +13,28 @@ logger = get_logger(__name__)
 
 MAX_CALL_RETRIES = 3
 RETRY_DELAY_SECONDS = 5
+
+# Google WaveNet voices for ru/ro sound more natural than Polly
+LANGUAGE_CONFIG = {
+    "en": {"gather_lang": "en-US", "voice": "Polly.Joanna", "say_lang": "en-US"},
+    "ru": {"gather_lang": "ru-RU", "voice": "Google.ru-RU-Wavenet-A", "say_lang": "ru-RU"},
+    "ro": {"gather_lang": "ro-RO", "voice": "Google.ro-RO-Wavenet-A", "say_lang": "ro-RO"},
+}
+
+# TODO: production — replace with Redis pub/sub or a shared message broker. Module-level
+# dicts are acceptable for MVP (single-worker deployment) but won't work with multiple
+# uvicorn workers. Entries are cleaned up after each call in the finally block.
+_gather_results: dict[str, asyncio.Future] = {}
+
+# Store language per call for webhooks to use
+# TODO: production — same as _gather_results, move to Redis for multi-worker support.
+_call_languages: dict[str, str] = {}
+
+
+def set_gather_result(call_sid: str, speech_text: str) -> None:
+    """Called by the webhook when Twilio sends gather results."""
+    if call_sid in _gather_results and not _gather_results[call_sid].done():
+        _gather_results[call_sid].set_result(speech_text)
 
 
 class TwilioAdapter(IVoiceProvider):
@@ -54,10 +75,13 @@ class TwilioAdapter(IVoiceProvider):
 
     async def hangup(self, call_sid: str) -> None:
         logger.info("Hanging up call %s", call_sid)
-        await self._run_sync(
-            self._client.calls(call_sid).update,
-            status="completed",
-        )
+        try:
+            await self._run_sync(
+                self._client.calls(call_sid).update,
+                status="completed",
+            )
+        except Exception as e:
+            logger.warning("Failed to hang up call %s: %s", call_sid, e)
 
     async def get_call_status(self, call_sid: str) -> str:
         call = await self._run_sync(self._client.calls(call_sid).fetch)
@@ -71,52 +95,79 @@ class TwilioAdapter(IVoiceProvider):
         )
         if not recordings:
             return None
-        return f"https://api.twilio.com{recordings[0].uri.replace('.json', '.wav')}"
+        return f"https://api.twilio.com{recordings[0].uri.replace('.json', '.mp3')}"
 
     async def play_audio(self, call_sid: str, audio_bytes: bytes) -> None:
-        """Update the live call with TwiML that plays synthesized audio.
+        """Update the live call with TwiML that speaks text and gathers response.
 
-        Uses Twilio's call update to inject new TwiML with a <Play> or <Say>
-        instruction. For production, audio_bytes would be hosted on a temporary
-        URL and played via <Play>. For simplicity, we use base64 inline audio.
+        For MVP, we use Twilio's <Say> verb instead of streaming OpenAI TTS audio.
+        The audio_bytes param is ignored — we extract text from the conversation
+        and let Twilio speak it. The caller will use say_and_gather() instead.
         """
-        logger.debug("Playing %d bytes of audio to call %s", len(audio_bytes), call_sid)
-        # Twilio requires audio at a URL. We encode and use a data URI workaround
-        # via the Say verb with SSML for MVP. In production, use a storage service.
-        response = VoiceResponse()
-        gather = Gather(input="speech", timeout=8, speech_timeout="auto")
-        response.append(gather)
+        # Interface compatibility — real work done by say_and_gather()
 
-        await self._run_sync(
-            self._client.calls(call_sid).update,
-            twiml=str(response),
+    async def say_and_gather(
+        self, call_sid: str, text: str, callback_url: str, language: str = "en"
+    ) -> str:
+        """Speak text to the callee using Twilio TTS and wait for their response.
+
+        Uses Twilio's <Say> + <Gather> TwiML, then waits for the webhook to
+        deliver the speech result via set_gather_result().
+        """
+        lang_cfg = LANGUAGE_CONFIG.get(language, LANGUAGE_CONFIG["en"])
+
+        clean_text = text.replace("[OBJECTIVE_ACHIEVED]", "").replace("[OBJECTIVE_FAILED]", "").strip()
+        if not clean_text:
+            fallback = {"en": "Thank you. Goodbye.", "ru": "Спасибо. До свидания.", "ro": "Mulțumesc. La revedere."}
+            clean_text = fallback.get(language, "Thank you. Goodbye.")
+
+        _call_languages[call_sid] = language
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        _gather_results[call_sid] = future
+
+        response = VoiceResponse()
+        gather = Gather(
+            input="speech",
+            action=f"{callback_url}/gather",
+            timeout=8,
+            speech_timeout="auto",
+            language=lang_cfg["gather_lang"],
         )
+        gather.say(clean_text, voice=lang_cfg["voice"], language=lang_cfg["say_lang"])
+        response.append(gather)
+        no_response = {"en": "I didn't hear a response.", "ru": "Я не услышал ответа.", "ro": "Nu am auzit un răspuns."}
+        response.say(no_response.get(language, no_response["en"]), voice=lang_cfg["voice"])
+        response.redirect(f"{callback_url}")
+
+        logger.info("Speaking to call %s: %.60s...", call_sid, clean_text)
+
+        try:
+            await self._run_sync(
+                self._client.calls(call_sid).update,
+                twiml=str(response),
+            )
+        except Exception as e:
+            logger.error("Failed to update call %s with TwiML: %s", call_sid, e)
+            _gather_results.pop(call_sid, None)
+            raise
+
+        try:
+            speech_text = await asyncio.wait_for(future, timeout=30)
+            logger.info("Received speech from call %s: %.60s...", call_sid, speech_text)
+            return speech_text
+        except TimeoutError:
+            logger.warning("No speech received from call %s within timeout", call_sid)
+            return ""
+        finally:
+            _gather_results.pop(call_sid, None)
 
     async def listen(self, call_sid: str, timeout: int = 10) -> bytes:
-        """Wait for Twilio Gather to capture speech and return audio.
-
-        In production, this uses Twilio Media Streams (WebSocket) for real-time
-        bidirectional audio. For the MVP, we poll the call's recordings.
-        """
+        """Legacy listen method — not used in webhook-driven flow."""
         logger.debug("Listening on call %s (timeout=%ds)", call_sid, timeout)
         await asyncio.sleep(timeout)
-
-        # Fetch the latest recording for this call
-        recordings = await self._run_sync(
-            self._client.recordings.list,
-            call_sid=call_sid,
-            limit=1,
-        )
-        if not recordings:
-            return b""
-
-        recording_url = f"https://api.twilio.com{recordings[0].uri.replace('.json', '.wav')}"
-        try:
-            audio_bytes = await self.get_recording_audio(recording_url)
-            return audio_bytes
-        except Exception as e:
-            logger.warning("Failed to fetch recording audio: %s", str(e))
-            return b""
+        return b""
 
     async def get_recording_audio(self, recording_url: str) -> bytes:
         """Download recording audio bytes from Twilio."""
@@ -141,7 +192,7 @@ class TwilioAdapter(IVoiceProvider):
             speech_timeout="auto",
             language="en-US",
         )
-        gather.say(audio_text, voice="Polly.Amy")
+        gather.say(audio_text, voice="Polly.Joanna")
         response.append(gather)
-        response.say("I didn't hear anything. Goodbye.", voice="Polly.Amy")
+        response.say("I didn't hear anything. Goodbye.", voice="Polly.Joanna")
         return str(response)
