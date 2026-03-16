@@ -30,6 +30,48 @@ async def get_transcript_view(
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
 
 
+@router.get("/{task_id}/transcript/download")
+async def download_transcript_view(
+    task_id: int,
+    call_service: Annotated[CallService, Depends(CallService)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> StreamingResponse:
+    """Download the call transcript as a text file."""
+    import io
+
+    try:
+        is_admin = current_user.role == UserRole.ADMIN
+        transcript = await call_service.get_transcript(task_id, current_user.id, is_admin=is_admin)
+    except TaskNotFoundError as e:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
+    except CallSessionNotFoundError as e:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
+
+    lines_text = []
+    lines_text.append(f"Transcript — Task #{task_id}")
+    lines_text.append(f"Date: {transcript.session.start_time.strftime('%Y-%m-%d %H:%M')}")
+    if transcript.session.duration:
+        minutes, seconds = divmod(transcript.session.duration, 60)
+        lines_text.append(f"Duration: {minutes}m {seconds}s")
+    lines_text.append("-" * 50)
+    lines_text.append("")
+
+    for line in transcript.lines:
+        speaker = "Agent" if line.speaker == "agent" else "Caller"
+        timestamp = line.timestamp.strftime("%H:%M:%S")
+        lines_text.append(f"[{timestamp}] {speaker}: {line.text}")
+
+    content = "\n".join(lines_text) + "\n"
+
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename=transcript_task_{task_id}.txt",
+        },
+    )
+
+
 @router.get("/{task_id}/session")
 async def get_call_session_view(
     task_id: int,
@@ -62,10 +104,12 @@ async def download_recording_view(
     current_user: Annotated[User, Depends(get_current_user)],
     download: bool = False,
 ) -> StreamingResponse:
-    """Stream or download the call recording as a WAV audio file."""
+    """Stream or download the call recording audio."""
     try:
         is_admin = current_user.role == UserRole.ADMIN
-        audio_bytes = await call_service.get_recording_audio(task_id, current_user.id, is_admin=is_admin)
+        audio_bytes, content_type = await call_service.get_recording_audio(
+            task_id, current_user.id, is_admin=is_admin
+        )
     except TaskNotFoundError as e:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
     except CallSessionNotFoundError as e:
@@ -75,14 +119,15 @@ async def download_recording_view(
 
     import io
 
-    headers = {}
-    if download:
-        headers["Content-Disposition"] = f"attachment; filename=recording_task_{task_id}.wav"
-    else:
-        headers["Content-Disposition"] = f"inline; filename=recording_task_{task_id}.wav"
+    ext = "mp3" if content_type == "audio/mpeg" else "wav"
+    filename = f"recording_task_{task_id}.{ext}"
+    disposition = "attachment" if download else "inline"
 
     return StreamingResponse(
         io.BytesIO(audio_bytes),
-        media_type="audio/wav",
-        headers=headers,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f"{disposition}; filename={filename}",
+            "Cache-Control": "no-store",
+        },
     )
