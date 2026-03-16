@@ -4,10 +4,15 @@ from typing import Annotated
 from fastapi import Depends
 
 from app.core.logging import get_logger
-from app.modules.tasks.exceptions import InvalidTaskDataError, TaskNotCancellableError, TaskNotFoundError
+from app.modules.tasks.exceptions import (
+    InvalidTaskDataError,
+    TaskNotCancellableError,
+    TaskNotEditableError,
+    TaskNotFoundError,
+)
 from app.modules.tasks.models import Task
 from app.modules.tasks.repository import TaskRepository
-from app.modules.tasks.schema import TaskCreate, TaskStatsResponse, TaskStatus
+from app.modules.tasks.schema import TaskCreate, TaskEditRequest, TaskStatsResponse, TaskStatus
 from app.modules.templates.exceptions import TemplateNotFoundError
 from app.modules.templates.repository import TemplateRepository
 
@@ -63,6 +68,40 @@ class TaskService:
         status: TaskStatus | None = None,
     ) -> tuple[Sequence[Task], int]:
         return await self.task_repository.get_all_paginated(user_id, limit, offset, status)
+
+    async def edit_task(self, task_id: int, user_id: int, data: TaskEditRequest, is_admin: bool = False) -> Task:
+        if is_admin:
+            task = await self.task_repository.get_by_id_any_user(task_id)
+        else:
+            task = await self.task_repository.get_by_id(task_id, user_id)
+        if not task:
+            raise TaskNotFoundError(f"Task with id {task_id} not found")
+
+        if task.status not in (TaskStatus.PENDING, TaskStatus.SCHEDULED):
+            raise TaskNotEditableError(
+                f"Task with status '{task.status}' cannot be edited. Only pending or scheduled tasks can be modified."
+            )
+
+        if data.target_phone is not None:
+            task.target_phone = data.target_phone
+
+        if data.slot_data is not None:
+            template = await self.template_repository.get_by_id(task.template_id)
+            if template:
+                missing_slots = [slot for slot in template.required_slots if slot not in data.slot_data]
+                if missing_slots:
+                    raise InvalidTaskDataError(f"Missing required slots: {', '.join(missing_slots)}")
+            task.slot_data = data.slot_data
+
+        if data.scheduled_time is not None:
+            task.scheduled_time = data.scheduled_time
+            task.status = TaskStatus.SCHEDULED
+        elif "scheduled_time" in (data.model_fields_set or set()):
+            task.scheduled_time = None
+            task.status = TaskStatus.PENDING
+
+        logger.info("Edited task %d by user %d", task_id, user_id)
+        return await self.task_repository.update(task)
 
     async def cancel_task(self, task_id: int, user_id: int) -> Task:
         task = await self.task_repository.get_by_id(task_id, user_id)

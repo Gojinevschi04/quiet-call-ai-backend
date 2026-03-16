@@ -7,10 +7,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.schema import MessageResponse
 from app.integrations.call_manager import CallManager
 from app.modules.notifications.email_service import EmailService
-from app.modules.tasks.exceptions import InvalidTaskDataError, TaskNotCancellableError, TaskNotFoundError
-from app.modules.tasks.schema import TaskCreate, TaskListResponse, TaskResponse, TaskStatsResponse, TaskStatus
+from app.modules.tasks.exceptions import (
+    InvalidTaskDataError,
+    TaskNotCancellableError,
+    TaskNotEditableError,
+    TaskNotFoundError,
+)
+from app.modules.tasks.schema import (
+    TaskCreate,
+    TaskEditRequest,
+    TaskListResponse,
+    TaskResponse,
+    TaskStatsResponse,
+    TaskStatus,
+)
 from app.modules.tasks.service import TaskService
 from app.modules.templates.exceptions import TemplateNotFoundError
+from app.modules.templates.repository import TemplateRepository
 from app.modules.users.middleware import get_current_user
 from app.modules.users.models import User
 from app.modules.users.schema import UserRole
@@ -39,6 +52,7 @@ def _task_to_response(task: "Task", template_name: str | None = None) -> TaskRes
 async def create_task_view(
     data: TaskCreate,
     task_service: Annotated[TaskService, Depends(TaskService)],
+    template_repository: Annotated[TemplateRepository, Depends(TemplateRepository)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> TaskResponse:
     try:
@@ -49,11 +63,14 @@ async def create_task_view(
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e
 
     if task.scheduled_time:
+        template = await template_repository.get_by_id(data.template_id)
+        language = template.language if template else "en"
         asyncio.create_task(
             EmailService().send_task_scheduled(
                 current_user.email,
                 task.target_phone,
                 task.scheduled_time.strftime("%Y-%m-%d %H:%M"),
+                language=language,
             )
         )
 
@@ -96,6 +113,26 @@ async def get_task_view(
         task = await task_service.get_task(task_id, current_user.id, is_admin=is_admin)
     except TaskNotFoundError as e:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
+
+    return _task_to_response(task)
+
+
+@router.put("/{task_id}")
+async def edit_task_view(
+    task_id: int,
+    data: TaskEditRequest,
+    task_service: Annotated[TaskService, Depends(TaskService)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> TaskResponse:
+    try:
+        is_admin = current_user.role == UserRole.ADMIN
+        task = await task_service.edit_task(task_id, current_user.id, data, is_admin=is_admin)
+    except TaskNotFoundError as e:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
+    except TaskNotEditableError as e:
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(e)) from e
+    except InvalidTaskDataError as e:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e
 
     return _task_to_response(task)
 

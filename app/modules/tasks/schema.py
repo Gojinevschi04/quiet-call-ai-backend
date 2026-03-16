@@ -54,9 +54,39 @@ class TaskCreate(TaskBase):
 
 
 class TaskUpdate(BaseModel):
+    """Internal update (used by system, not users)."""
+
     status: TaskStatus | None = None
     summary: str | None = None
     error_reason: str | None = None
+
+
+class TaskEditRequest(BaseModel):
+    """User-facing edit for pending/scheduled tasks."""
+
+    target_phone: str | None = None
+    slot_data: dict[str, str] | None = None
+    scheduled_time: datetime | None = None
+
+    @field_validator("target_phone")
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        if v is not None and not PHONE_REGEX.match(v):
+            raise ValueError("Invalid phone number format. Expected: +XXXXXXXXXXX")
+        return v
+
+    @field_validator("slot_data")
+    @classmethod
+    def validate_slot_data(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is not None:
+            if len(v) > 20:
+                raise ValueError("Maximum 20 slot values allowed")
+            for key, value in v.items():
+                if len(key) > 50:
+                    raise ValueError(f"Slot key '{key[:20]}...' exceeds 50 characters")
+                if len(value) > 500:
+                    raise ValueError(f"Slot value for '{key}' exceeds 500 characters")
+        return v
 
 
 class TaskResponse(BaseModel):
