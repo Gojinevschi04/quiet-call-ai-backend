@@ -9,6 +9,7 @@ from app.modules.notifications.email_service import EmailService
 from app.modules.tasks.models import Task
 from app.modules.tasks.repository import TaskRepository
 from app.modules.tasks.schema import TaskStatus
+from app.modules.templates.repository import TemplateRepository
 from app.modules.users.repository import UserRepository
 
 logger = get_logger(__name__)
@@ -21,11 +22,13 @@ class PostCallProcessor:
         user_repository: Annotated[UserRepository, Depends(UserRepository)],
         call_session_repository: Annotated[CallSessionRepository, Depends(CallSessionRepository)],
         log_line_repository: Annotated[LogLineRepository, Depends(LogLineRepository)],
+        template_repository: Annotated[TemplateRepository, Depends(TemplateRepository)],
     ) -> None:
         self.task_repository = task_repository
         self.user_repository = user_repository
         self.call_session_repository = call_session_repository
         self.log_line_repository = log_line_repository
+        self.template_repository = template_repository
         self.email_service = EmailService()
 
     async def process(self, task: Task) -> None:
@@ -44,12 +47,16 @@ class PostCallProcessor:
         logger.info("Post-call processing completed for task %d", task.id)
 
     async def _send_notification(self, task: Task, user_email: str) -> None:
+        template = await self.template_repository.get_by_id(task.template_id)
+        language = template.language if template else "en"
+
         if task.status == TaskStatus.COMPLETED:
             await self.email_service.send_task_success(
                 to_email=user_email,
                 task_phone=task.target_phone,
                 summary=task.summary or "Call completed successfully.",
                 task_id=task.id,
+                language=language,
             )
         elif task.status == TaskStatus.FAILED:
             await self.email_service.send_task_failure(
@@ -57,6 +64,7 @@ class PostCallProcessor:
                 task_phone=task.target_phone,
                 error_reason=task.error_reason or "Unknown error.",
                 task_id=task.id,
+                language=language,
             )
 
     async def _archive_logs(self, task: Task) -> None:

@@ -1,0 +1,10 @@
+PRIMARY = "#6366f1"
+SUCCESS = "#22c55e"
+DANGER = "#ef4444"
+WARNING = "#f59e0b"
+GRAY = "#6b7280"
+BG = "#f9fafb"
+CARD_BG = "#ffffff"
+
+FONT_STACK = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"
+BOX_SHADOW = "box-shadow:0 1px 3px rgba(0,0,0,0.1)"

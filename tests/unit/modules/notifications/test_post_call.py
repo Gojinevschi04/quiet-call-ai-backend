@@ -7,6 +7,8 @@ from app.modules.calls.repository import CallSessionRepository, LogLineRepositor
 from app.modules.tasks.models import Task
 from app.modules.tasks.repository import TaskRepository
 from app.modules.tasks.schema import TaskStatus
+from app.modules.templates.models import DialogTemplate
+from app.modules.templates.repository import TemplateRepository
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
 from app.modules.users.schema import UserRole
@@ -26,6 +28,10 @@ async def test_process_completed_task(mock_task: Task, mock_call_session: CallSe
     mock_session_repo.get_by_task_id = AsyncMock(return_value=mock_call_session)
     mock_log_repo = MagicMock(spec=LogLineRepository)
     mock_log_repo.get_by_session_id = AsyncMock(return_value=[])
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+    mock_template = MagicMock(spec=DialogTemplate)
+    mock_template.language = "en"
+    mock_template_repo.get_by_id = AsyncMock(return_value=mock_template)
 
     with patch("app.modules.notifications.post_call.EmailService") as mock_email_cls:
         mock_email = MagicMock()
@@ -40,6 +46,7 @@ async def test_process_completed_task(mock_task: Task, mock_call_session: CallSe
             user_repository=mock_user_repo,
             call_session_repository=mock_session_repo,
             log_line_repository=mock_log_repo,
+            template_repository=mock_template_repo,
         )
         await processor.process(mock_task)
 
@@ -48,6 +55,7 @@ async def test_process_completed_task(mock_task: Task, mock_call_session: CallSe
             task_phone=mock_task.target_phone,
             summary="Appointment booked for March 20.",
             task_id=mock_task.id,
+            language="en",
         )
         mock_email.send_task_failure.assert_not_called()
 
@@ -65,6 +73,10 @@ async def test_process_failed_task(mock_task: Task) -> None:
     mock_session_repo = MagicMock(spec=CallSessionRepository)
     mock_session_repo.get_by_task_id = AsyncMock(return_value=None)
     mock_log_repo = MagicMock(spec=LogLineRepository)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+    mock_template = MagicMock(spec=DialogTemplate)
+    mock_template.language = "en"
+    mock_template_repo.get_by_id = AsyncMock(return_value=mock_template)
 
     with patch("app.modules.notifications.post_call.EmailService") as mock_email_cls:
         mock_email = MagicMock()
@@ -79,6 +91,7 @@ async def test_process_failed_task(mock_task: Task) -> None:
             user_repository=mock_user_repo,
             call_session_repository=mock_session_repo,
             log_line_repository=mock_log_repo,
+            template_repository=mock_template_repo,
         )
         await processor.process(mock_task)
 
@@ -87,6 +100,7 @@ async def test_process_failed_task(mock_task: Task) -> None:
             task_phone=mock_task.target_phone,
             error_reason="No answer after 3 retries",
             task_id=mock_task.id,
+            language="en",
         )
         mock_email.send_task_success.assert_not_called()
 
@@ -100,6 +114,7 @@ async def test_process_no_user_email(mock_task: Task) -> None:
     mock_user_repo.get_by_id = AsyncMock(return_value=None)
     mock_session_repo = MagicMock(spec=CallSessionRepository)
     mock_log_repo = MagicMock(spec=LogLineRepository)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
 
     with patch("app.modules.notifications.post_call.EmailService") as mock_email_cls:
         mock_email = MagicMock()
@@ -114,6 +129,7 @@ async def test_process_no_user_email(mock_task: Task) -> None:
             user_repository=mock_user_repo,
             call_session_repository=mock_session_repo,
             log_line_repository=mock_log_repo,
+            template_repository=mock_template_repo,
         )
         await processor.process(mock_task)
 

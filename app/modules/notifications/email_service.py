@@ -4,34 +4,39 @@ import aiosmtplib
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.modules.notifications.constants import (
+    BG,
+    BOX_SHADOW,
+    CARD_BG,
+    DANGER,
+    FONT_STACK,
+    GRAY,
+    PRIMARY,
+    SUCCESS,
+    WARNING,
+)
+from app.modules.notifications.translations import get_translations
 
 logger = get_logger(__name__)
-
-# Brand colors
-_PRIMARY = "#6366f1"
-_SUCCESS = "#22c55e"
-_DANGER = "#ef4444"
-_WARNING = "#f59e0b"
-_GRAY = "#6b7280"
-_BG = "#f9fafb"
-_CARD_BG = "#ffffff"
 
 
 def _base_template(title: str, accent: str, content: str) -> str:
     """Wrap content in a branded email layout."""
-    frontend_url = settings.CORS_ORIGINS.split(",")[0] if settings.CORS_ORIGINS else settings.BASE_URL
-    font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"
-    shadow = "box-shadow:0 1px 3px rgba(0,0,0,0.1)"
-    card = f"background:{_CARD_BG};border-radius:16px;overflow:hidden;{shadow}"
+    frontend_url = (
+        settings.CORS_ORIGINS.split(",")[0]
+        if settings.CORS_ORIGINS
+        else settings.BASE_URL
+    )
+    card = f"background:{CARD_BG};border-radius:16px;overflow:hidden;{BOX_SHADOW}"
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
-<body style="margin:0;padding:0;background:{_BG};font-family:{font};">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};padding:40px 20px;">
+<body style="margin:0;padding:0;background:{BG};font-family:{FONT_STACK};">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{BG};padding:40px 20px;">
     <tr><td align="center">
       <table width="560" cellpadding="0" cellspacing="0" style="{card};">
         <!-- Header -->
-        <tr><td style="background:linear-gradient(135deg,{_PRIMARY},{accent});padding:32px 40px;">
+        <tr><td style="background:linear-gradient(135deg,{PRIMARY},{accent});padding:32px 40px;">
           <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">{title}</h1>
         </td></tr>
         <!-- Body -->
@@ -40,8 +45,8 @@ def _base_template(title: str, accent: str, content: str) -> str:
         </td></tr>
         <!-- Footer -->
         <tr><td style="padding:20px 40px 28px;border-top:1px solid #f3f4f6;">
-          <p style="margin:0;font-size:12px;color:{_GRAY};">
-            <a href="{frontend_url}" style="color:{_PRIMARY};text-decoration:none;">Open Quiet Call AI</a>
+          <p style="margin:0;font-size:12px;color:{GRAY};">
+            <a href="{frontend_url}" style="color:{PRIMARY};text-decoration:none;">Open Quiet Call AI</a>
             &nbsp;&middot;&nbsp; You received this email because you have an account with us.
           </p>
         </td></tr>
@@ -52,7 +57,7 @@ def _base_template(title: str, accent: str, content: str) -> str:
 </html>"""
 
 
-def _button(text: str, url: str, color: str = _PRIMARY) -> str:
+def _button(text: str, url: str, color: str = PRIMARY) -> str:
     return (
         f'<a href="{url}" style="display:inline-block;padding:12px 28px;background:{color};'
         f'color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px;">'
@@ -63,7 +68,7 @@ def _button(text: str, url: str, color: str = _PRIMARY) -> str:
 def _info_box(label: str, value: str) -> str:
     return (
         f'<div style="background:#f3f4f6;padding:14px 18px;border-radius:10px;margin:8px 0;">'
-        f'<span style="font-size:12px;color:{_GRAY};">{label}</span><br>'
+        f'<span style="font-size:12px;color:{GRAY};">{label}</span><br>'
         f'<span style="font-size:15px;font-weight:600;color:#111827;">{value}</span></div>'
     )
 
@@ -97,127 +102,193 @@ class EmailService:
 
     # ---- Auth emails ----
 
-    async def send_welcome(self, to_email: str) -> bool:
-        frontend_url = settings.CORS_ORIGINS.split(",")[0] if settings.CORS_ORIGINS else settings.BASE_URL
+    async def send_welcome(self, to_email: str, language: str = "en") -> bool:
+        tr = get_translations(language)
+        frontend_url = (
+            settings.CORS_ORIGINS.split(",")[0]
+            if settings.CORS_ORIGINS
+            else settings.BASE_URL
+        )
         content = (
-            '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            "Welcome to <strong>Quiet Call AI</strong>! Your account is ready.</p>"
-            '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            "You can now create tasks to automate your phone calls. "
-            "Pick a template, fill in the details, and let the AI agent handle the conversation.</p>"
-            f'<div style="text-align:center;margin:28px 0;">{_button("Go to Dashboard", frontend_url)}</div>'
+            f'<p style="font-size:15px;color:#374151;line-height:1.6;">{tr["welcome_body"]}</p>'
+            f'<p style="font-size:15px;color:#374151;line-height:1.6;">{tr["welcome_body2"]}</p>'
+            f'<div style="text-align:center;margin:28px 0;">'
+            f'{_button(tr["go_to_dashboard"], frontend_url)}</div>'
         )
         return await self.send_email(
             to_email,
-            "Welcome to Quiet Call AI",
-            _base_template("Welcome aboard!", _PRIMARY, content),
+            f'Quiet Call AI — {tr["welcome_title"]}',
+            _base_template(tr["welcome_title"], PRIMARY, content),
         )
 
-    async def send_password_reset(self, to_email: str, reset_token: str) -> bool:
-        reset_url = f"{settings.BASE_URL}/auth/reset-password?token={reset_token}"
+    async def send_password_reset(
+        self, to_email: str, reset_token: str, language: str = "en"
+    ) -> bool:
+        tr = get_translations(language)
+        frontend_url = (
+            settings.CORS_ORIGINS.split(",")[0]
+            if settings.CORS_ORIGINS
+            else settings.BASE_URL
+        )
+        reset_url = f"{frontend_url}/reset-password?token={reset_token}"
         content = (
-            '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            "We received a request to reset your password. Click the button below to choose a new one.</p>"
-            f'<div style="text-align:center;margin:28px 0;">{_button("Reset Password", reset_url, _WARNING)}</div>'
-            '<p style="font-size:13px;color:#9ca3af;">If you did not request this, you can safely ignore this email. '
-            "The link expires in 1 hour.</p>"
+            f'<p style="font-size:15px;color:#374151;line-height:1.6;">{tr["reset_body"]}</p>'
+            f'<div style="text-align:center;margin:28px 0;">'
+            f'{_button(tr["reset_button"], reset_url, WARNING)}</div>'
+            f'<p style="font-size:13px;color:#9ca3af;">{tr["reset_note"]}</p>'
         )
         return await self.send_email(
             to_email,
-            "Quiet Call AI — Reset Your Password",
-            _base_template("Password Reset", _WARNING, content),
+            f'Quiet Call AI — {tr["reset_title"]}',
+            _base_template(tr["reset_title"], WARNING, content),
         )
 
-    async def send_password_changed(self, to_email: str) -> bool:
+    async def send_password_changed(self, to_email: str, language: str = "en") -> bool:
+        tr = get_translations(language)
         content = (
-            '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            "Your password was changed successfully.</p>"
-            '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            "If you did not make this change, please reset your password immediately "
-            "or contact support.</p>"
+            f'<p style="font-size:15px;color:#374151;line-height:1.6;">{tr["password_changed_body"]}</p>'
+            f'<p style="font-size:15px;color:#374151;line-height:1.6;">{tr["password_changed_warning"]}</p>'
         )
         return await self.send_email(
             to_email,
-            "Quiet Call AI — Password Changed",
-            _base_template("Password Changed", _WARNING, content),
+            f'Quiet Call AI — {tr["password_changed_title"]}',
+            _base_template(tr["password_changed_title"], WARNING, content),
         )
 
-    async def send_email_changed(self, to_old_email: str, new_email: str) -> bool:
+    async def send_email_changed(
+        self, to_old_email: str, new_email: str, language: str = "en"
+    ) -> bool:
+        tr = get_translations(language)
         content = (
-            '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            f"Your account email has been changed to <strong>{new_email}</strong>.</p>"
-            '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            "If you did not make this change, please contact support immediately.</p>"
+            f'<p style="font-size:15px;color:#374151;line-height:1.6;">'
+            f'{tr["email_changed_body"]} <strong>{new_email}</strong>.</p>'
+            f'<p style="font-size:15px;color:#374151;line-height:1.6;">{tr["email_changed_warning"]}</p>'
         )
         return await self.send_email(
             to_old_email,
-            "Quiet Call AI — Email Address Changed",
-            _base_template("Email Changed", _WARNING, content),
+            f'Quiet Call AI — {tr["email_changed_title"]}',
+            _base_template(tr["email_changed_title"], WARNING, content),
         )
 
     # ---- Task emails ----
 
-    async def send_task_scheduled(self, to_email: str, task_phone: str, scheduled_time: str) -> bool:
+    async def send_task_scheduled(
+        self, to_email: str, task_phone: str, scheduled_time: str, language: str = "en"
+    ) -> bool:
+        tr = get_translations(language)
         content = (
             '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            "Your call has been scheduled and will be executed automatically.</p>"
-            + _info_box("Phone number", task_phone)
-            + _info_box("Scheduled for", scheduled_time)
+            f'{tr["scheduled_body"]}</p>'
+            + _info_box(tr["phone_number"], task_phone)
+            + _info_box(tr["scheduled_for"], scheduled_time)
             + '<p style="font-size:13px;color:#9ca3af;margin-top:16px;">'
-            "You will receive another email when the call is completed.</p>"
+            f'{tr["scheduled_followup"]}</p>'
         )
         return await self.send_email(
             to_email,
-            "Quiet Call AI — Call Scheduled",
-            _base_template("Call Scheduled", _PRIMARY, content),
+            f'Quiet Call AI — {tr["call_scheduled"]}',
+            _base_template(tr["call_scheduled"], PRIMARY, content),
         )
 
     async def send_task_success(
-        self, to_email: str, task_phone: str, summary: str, task_id: int | None = None
+        self,
+        to_email: str,
+        task_phone: str,
+        summary: str,
+        task_id: int | None = None,
+        language: str = "en",
     ) -> bool:
-        frontend_url = settings.CORS_ORIGINS.split(",")[0] if settings.CORS_ORIGINS else settings.BASE_URL
+        tr = get_translations(language)
+        frontend_url = (
+            settings.CORS_ORIGINS.split(",")[0]
+            if settings.CORS_ORIGINS
+            else settings.BASE_URL
+        )
         details_btn = ""
         if task_id:
             details_btn = (
                 f'<div style="text-align:center;margin:24px 0;">'
-                f'{_button("View Full Transcript", f"{frontend_url}/tasks/{task_id}", _SUCCESS)}</div>'
+                f'{_button(tr["view_transcript"], f"{frontend_url}/tasks/{task_id}", SUCCESS)}</div>'
             )
         content = (
             '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            "Your automated call has been completed successfully.</p>"
+            f'{tr["call_completed_body"]}</p>'
             + _info_box("Called", task_phone)
             + '<div style="background:#f0fdf4;padding:14px 18px;border-radius:10px;margin:12px 0;">'
-            f'<span style="font-size:12px;color:{_SUCCESS};font-weight:600;">AI Summary</span><br>'
+            f'<span style="font-size:12px;color:{SUCCESS};font-weight:600;">{tr["ai_summary"]}</span><br>'
             f'<span style="font-size:14px;color:#374151;line-height:1.5;">{summary}</span></div>'
             + details_btn
         )
         return await self.send_email(
             to_email,
-            "Quiet Call AI — Call Completed Successfully",
-            _base_template("Call Completed", _SUCCESS, content),
+            f'Quiet Call AI — {tr["call_completed"]}',
+            _base_template(tr["call_completed"], SUCCESS, content),
         )
 
     async def send_task_failure(
-        self, to_email: str, task_phone: str, error_reason: str, task_id: int | None = None
+        self,
+        to_email: str,
+        task_phone: str,
+        error_reason: str,
+        task_id: int | None = None,
+        language: str = "en",
     ) -> bool:
-        frontend_url = settings.CORS_ORIGINS.split(",")[0] if settings.CORS_ORIGINS else settings.BASE_URL
+        tr = get_translations(language)
+        frontend_url = (
+            settings.CORS_ORIGINS.split(",")[0]
+            if settings.CORS_ORIGINS
+            else settings.BASE_URL
+        )
         retry_btn = ""
         if task_id:
             retry_btn = (
                 f'<div style="text-align:center;margin:24px 0;">'
-                f'{_button("View Task & Retry", f"{frontend_url}/tasks/{task_id}", _DANGER)}</div>'
+                f'{_button(tr["view_task_retry"], f"{frontend_url}/tasks/{task_id}", DANGER)}</div>'
             )
         content = (
             '<p style="font-size:15px;color:#374151;line-height:1.6;">'
-            "Your automated call could not be completed.</p>"
+            f'{tr["call_failed_body"]}</p>'
             + _info_box("Called", task_phone)
             + '<div style="background:#fef2f2;padding:14px 18px;border-radius:10px;margin:12px 0;">'
-            f'<span style="font-size:12px;color:{_DANGER};font-weight:600;">Reason</span><br>'
+            f'<span style="font-size:12px;color:{DANGER};font-weight:600;">{tr["reason"]}</span><br>'
             f'<span style="font-size:14px;color:#991b1b;line-height:1.5;">{error_reason}</span></div>'
             + retry_btn
         )
         return await self.send_email(
             to_email,
-            "Quiet Call AI — Call Failed",
-            _base_template("Call Failed", _DANGER, content),
+            f'Quiet Call AI — {tr["call_failed"]}',
+            _base_template(tr["call_failed"], DANGER, content),
         )
+
+    # ---- Feedback ----
+
+    async def send_feedback(
+        self, sender_name: str, sender_email: str, message: str
+    ) -> bool:
+        recipients = [
+            e.strip() for e in settings.FEEDBACK_EMAILS.split(",") if e.strip()
+        ]
+        if not recipients:
+            logger.warning("No FEEDBACK_EMAILS configured, skipping feedback delivery")
+            return False
+
+        content = (
+            '<p style="font-size:15px;color:#374151;line-height:1.6;">'
+            "New feedback received from the contact form.</p>"
+            + _info_box("From", f"{sender_name} ({sender_email})")
+            + '<div style="background:#f3f4f6;padding:14px 18px;border-radius:10px;margin:12px 0;">'
+            f'<span style="font-size:12px;color:{GRAY};font-weight:600;">Message</span><br>'
+            f'<span style="font-size:14px;color:#374151;line-height:1.6;white-space:pre-wrap;">'
+            f"{message}</span></div>"
+            + f'<p style="font-size:13px;color:#9ca3af;">Reply directly to '
+            f'<a href="mailto:{sender_email}" style="color:{PRIMARY};">{sender_email}</a></p>'
+        )
+        subject = f"Quiet Call AI — Feedback from {sender_name}"
+        body = _base_template("New Feedback", PRIMARY, content)
+
+        success = True
+        for recipient in recipients:
+            result = await self.send_email(recipient, subject, body)
+            if not result:
+                success = False
+        return success

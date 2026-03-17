@@ -1,9 +1,10 @@
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.core.schema import MessageResponse
+from app.core.utils import get_request_language
 from app.modules.notifications.email_service import EmailService
 from app.modules.users.middleware import get_current_admin_user, get_current_user
 from app.modules.users.models import User
@@ -30,6 +31,7 @@ async def get_profile_view(
 
 @router.put("/me")
 async def update_profile_view(
+    request: Request,
     data: ProfileUpdate,
     user_service: Annotated[UserService, Depends(UserService)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -39,9 +41,9 @@ async def update_profile_view(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    # Email change requires re-authentication + notify old email
     if data.email is not None and data.email != current_user.email:
-        asyncio.create_task(EmailService().send_email_changed(current_user.email, data.email))
+        lang = get_request_language(request)
+        asyncio.create_task(EmailService().send_email_changed(current_user.email, data.email, language=lang))
         return MessageResponse(
             message="Profile updated. Please log in again with your new email.",
             require_reauth=True,
@@ -51,6 +53,7 @@ async def update_profile_view(
 
 @router.post("/me/change-password")
 async def change_password_view(
+    request: Request,
     data: ChangePassword,
     user_service: Annotated[UserService, Depends(UserService)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -59,7 +62,8 @@ async def change_password_view(
         await user_service.change_password(current_user.id, data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    asyncio.create_task(EmailService().send_password_changed(current_user.email))
+    lang = get_request_language(request)
+    asyncio.create_task(EmailService().send_password_changed(current_user.email, language=lang))
     return MessageResponse(message="Password changed successfully", require_reauth=True)
 
 
