@@ -46,18 +46,16 @@ def setup_logging() -> logging.Logger:
         backupCount=5,
         encoding="utf-8",
     )
-    error_handler.setLevel(logging.ERROR)
+    error_handler.setLevel(logging.WARNING)
     error_handler.setFormatter(detailed_formatter)
     root_logger.addHandler(error_handler)
 
-    # Suppress verbose third-party loggers
     logging.getLogger("uvicorn").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("fastapi").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    # Get the "api" logger for backward compatibility
     logger = logging.getLogger("api")
     logger.setLevel(log_level)
 

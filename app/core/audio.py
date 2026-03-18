@@ -115,8 +115,7 @@ def generate_demo_conversation_mp3(
         loop = None
 
     if loop and loop.is_running():
-        # We're inside an async context — create a new event loop in this thread
-        # (this function is called from run_in_executor, so we have our own thread)
+        # Called from run_in_executor — needs its own event loop in this thread
         new_loop = asyncio.new_event_loop()
         try:
             return new_loop.run_until_complete(generate_demo_conversation_mp3_async(lines))

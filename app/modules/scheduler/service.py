@@ -96,11 +96,8 @@ async def run_scheduler() -> None:
 
             for task_id, user_id in due_tasks:
                 try:
-                    # Transition in its own session to avoid conflicts
                     async with AsyncSession(engine) as session:
                         await transition_task(session, task_id)
-
-                    # Auto-execute the task
                     await execute_due_task(task_id, user_id)
 
                 except Exception as e:
@@ -109,7 +106,6 @@ async def run_scheduler() -> None:
             if due_tasks:
                 logger.info("Processed %d due tasks", len(due_tasks))
 
-            # Auto-retry failed tasks with network errors (once only)
             async with AsyncSession(engine) as session:
                 retryable = await get_retryable_failed_tasks(session)
 
@@ -136,7 +132,6 @@ async def execute_due_task(task_id: int, user_id: int) -> None:
     Creates its own DB session and dependencies to avoid
     sharing state with the scheduler session.
     """
-    from app.core.database import get_db_session
     from app.integrations.call_manager import CallManager
     from app.modules.calls.repository import CallSessionRepository, LogLineRepository
     from app.modules.tasks.repository import TaskRepository

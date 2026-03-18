@@ -15,7 +15,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         duration_ms = round((time.perf_counter() - start) * 1000, 1)
 
-        # Skip logging health checks to reduce noise
         if request.url.path == "/health":
             return response
 

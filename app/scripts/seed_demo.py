@@ -22,6 +22,8 @@ from app.modules.templates.models import DialogTemplate
 from app.modules.users.models import User
 from app.modules.users.schema import UserRole
 
+SECONDS_BETWEEN_LINES = 8
+
 DEMO_USERS = [
     {
         "email": "ana.gojinevschi@isa.utm.md",
@@ -89,24 +91,24 @@ DEMO_USERS = [
 async def seed_users(session: AsyncSession) -> dict[str, int]:
     """Returns dict of email → user_id."""
     user_ids: dict[str, int] = {}
-    for ud in DEMO_USERS:
-        result = await session.exec(select(User).where(User.email == ud["email"]))
+    for user_data in DEMO_USERS:
+        result = await session.exec(select(User).where(User.email == user_data["email"]))
         existing = result.first()
         if existing:
-            print(f"  SKIP user: '{ud['email']}' (id={existing.id})")
-            user_ids[ud["email"]] = existing.id
+            print(f"  SKIP user: '{user_data['email']}' (id={existing.id})")
+            user_ids[user_data["email"]] = existing.id
             continue
         user = User(
-            email=ud["email"],
-            role=ud["role"],
-            hashed_password=AuthService.hash_password(ud["password"]),
-            phone_number=ud["phone_number"],
+            email=user_data["email"],
+            role=user_data["role"],
+            hashed_password=AuthService.hash_password(user_data["password"]),
+            phone_number=user_data["phone_number"],
         )
         session.add(user)
         await session.commit()
         await session.refresh(user)
         print(f"  CREATED user: '{user.email}' (id={user.id}, role={user.role})")
-        user_ids[ud["email"]] = user.id
+        user_ids[user_data["email"]] = user.id
     return user_ids
 
 
@@ -117,7 +119,6 @@ def _get_template_id(
 
 
 async def seed_tasks(session: AsyncSession, users: dict[str, int]) -> list[Task]:
-    # Check existing task count
     result = await session.exec(select(func.count()).select_from(Task))
     count = result.one()
     if count >= 10:
@@ -130,9 +131,8 @@ async def seed_tasks(session: AsyncSession, users: dict[str, int]) -> list[Task]
         print("  SKIP tasks: no templates — run 'make db.seed' first")
         return []
 
-    # Build a name→id map (avoids lazy-loading issues)
-    tm_ids: dict[str, int] = {t.name: t.id for t in templates}
-    fb_id = templates[0].id
+    template_name_to_id: dict[str, int] = {t.name: t.id for t in templates}
+    fallback_template_id = templates[0].id
     now = datetime.now()
 
     tasks_data = [
@@ -535,32 +535,32 @@ async def seed_tasks(session: AsyncSession, users: dict[str, int]) -> list[Task]
         },
     ]
 
-    created_task_ids: list[tuple[int, str]] = []  # (task_id, status)
-    for td in tasks_data:
+    created_task_ids: list[tuple[int, str]] = []
+    for task_data in tasks_data:
         task = Task(
-            target_phone=td["phone"],
-            status=td["status"],
-            template_id=tm_ids.get(td["tpl"], fb_id),
-            user_id=users[td["user"]],
-            slot_data=td["slots"],
+            target_phone=task_data["phone"],
+            status=task_data["status"],
+            template_id=template_name_to_id.get(task_data["tpl"], fallback_template_id),
+            user_id=users[task_data["user"]],
+            slot_data=task_data["slots"],
             scheduled_time=(
-                now + timedelta(days=td["scheduled_future_days"])
-                if "scheduled_future_days" in td
+                now + timedelta(days=task_data["scheduled_future_days"])
+                if "scheduled_future_days" in task_data
                 else None
             ),
-            summary=td.get("summary"),
-            error_reason=td.get("error"),
+            summary=task_data.get("summary"),
+            error_reason=task_data.get("error"),
         )
         session.add(task)
         await session.commit()
         await session.refresh(task)
-        created_task_ids.append((task.id, td["status"]))
+        created_task_ids.append((task.id, task_data["status"]))
 
     print(f"  CREATED {len(created_task_ids)} demo tasks")
     return created_task_ids
 
 
-TRANSCRIPTS: dict[str, list[dict]] = {
+DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
     "appointment_success": [
         {
             "speaker": Speaker.AGENT,
@@ -594,7 +594,8 @@ TRANSCRIPTS: dict[str, list[dict]] = {
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "Thank you very much. The appointment is confirmed for March 20 at 10 AM. Have a great day! [OBJECTIVE_ACHIEVED]",
+            "text": "Thank you very much. The appointment is confirmed for March 20 at 10 AM. "
+            "Have a great day! [OBJECTIVE_ACHIEVED]",
             "intent": None,
         },
         {
@@ -717,19 +718,16 @@ TRANSCRIPTS: dict[str, list[dict]] = {
 async def seed_call_sessions(
     session: AsyncSession, tasks: list[tuple[int, str]]
 ) -> None:
-    # Check if sessions already exist
     result = await session.exec(select(func.count()).select_from(CallSession))
     count = result.one()
     if count > 0:
         print(f"  SKIP call sessions: {count} already exist")
         return
 
-    transcript_keys = list(TRANSCRIPTS.keys())
-    t_idx = 0
-    created_sessions = 0
-    created_lines = 0
+    transcript_keys = list(DEMO_TRANSCRIPTS.keys())
+    total_sessions = 0
+    total_log_lines = 0
 
-    # Get all completed/failed tasks from DB
     result = await session.exec(
         select(Task.id, Task.status).where(
             Task.status.in_([TaskStatus.COMPLETED, TaskStatus.FAILED])
@@ -737,42 +735,39 @@ async def seed_call_sessions(
     )
     eligible_tasks = result.all()
 
-    for task_id, task_status in eligible_tasks:
-
+    for task_index, (task_id, _task_status) in enumerate(eligible_tasks):
         now = datetime.now()
         duration = 45 + (task_id * 7) % 120
 
-        cs = CallSession(
+        call_session = CallSession(
             task_id=task_id,
             start_time=now - timedelta(days=task_id % 10, hours=task_id % 5),
             duration=duration,
             recording_uri=f"https://api.twilio.com/2010-04-01/Accounts/DEMO/Recordings/RE{task_id:06d}.wav",
         )
-        session.add(cs)
+        session.add(call_session)
         await session.commit()
-        await session.refresh(cs)
-        created_sessions += 1
+        await session.refresh(call_session)
+        total_sessions += 1
 
-        # Pick a transcript template
-        key = transcript_keys[t_idx % len(transcript_keys)]
-        t_idx += 1
-        transcript = TRANSCRIPTS[key]
+        template_key = transcript_keys[task_index % len(transcript_keys)]
+        transcript_lines = DEMO_TRANSCRIPTS[template_key]
 
-        base_time = cs.start_time
-        for i, line in enumerate(transcript):
+        transcript_start_time = call_session.start_time
+        for line_index, transcript_line in enumerate(transcript_lines):
             log = LogLine(
-                session_id=cs.id,
-                timestamp=base_time + timedelta(seconds=i * 8),
-                speaker=line["speaker"],
-                text=line["text"],
-                detected_intent=line["intent"],
+                session_id=call_session.id,
+                timestamp=transcript_start_time + timedelta(seconds=line_index * SECONDS_BETWEEN_LINES),
+                speaker=transcript_line["speaker"],
+                text=transcript_line["text"],
+                detected_intent=transcript_line["intent"],
             )
             session.add(log)
-            created_lines += 1
+            total_log_lines += 1
 
         await session.commit()
 
-    print(f"  CREATED {created_sessions} call sessions with {created_lines} log lines")
+    print(f"  CREATED {total_sessions} call sessions with {total_log_lines} log lines")
 
 
 async def seed() -> None:

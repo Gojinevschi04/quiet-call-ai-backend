@@ -21,7 +21,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     async def dispatch(self, request: Request, call_next) -> Response:  # noqa: ANN001
-        # Skip rate limiting if disabled or for health/webhooks
         if self.max_requests <= 0:
             return await call_next(request)
         if request.url.path in ("/health",) or request.url.path.startswith("/webhooks"):
@@ -30,7 +29,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
 
-        # Clean old entries outside the window
         self._requests[client_ip] = [
             t for t in self._requests[client_ip] if now - t < self.window
         ]

@@ -2,7 +2,6 @@ from fastapi import APIRouter
 from sqlmodel import text
 
 from app.core.database import async_session
-from app.core.schema import MessageResponse
 
 router = APIRouter(tags=["health"])
 
