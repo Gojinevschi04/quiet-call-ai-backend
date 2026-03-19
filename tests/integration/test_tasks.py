@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -94,23 +94,32 @@ async def test_get_task_stats(authenticated_client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_get_task(authenticated_client: AsyncClient) -> None:
-    with patch("app.modules.tasks.service.TaskService.get_task") as mock_get:
-        mock_task = MagicMock()
-        mock_task.id = 1
-        mock_task.target_phone = "+37312345678"
-        mock_task.status = TaskStatus.COMPLETED
-        mock_task.template_id = 1
-        mock_task.slot_data = {}
-        mock_task.scheduled_time = None
-        mock_task.summary = "Appointment confirmed for March 20"
-        mock_task.error_reason = None
-        mock_task.created_at = "2026-01-01T00:00:00"
-        mock_task.updated_at = "2026-01-01T00:00:00"
+    mock_task = MagicMock()
+    mock_task.id = 1
+    mock_task.target_phone = "+37312345678"
+    mock_task.status = TaskStatus.COMPLETED
+    mock_task.template_id = 1
+    mock_task.slot_data = {}
+    mock_task.scheduled_time = None
+    mock_task.summary = "Appointment confirmed for March 20"
+    mock_task.error_reason = None
+    mock_task.created_at = "2026-01-01T00:00:00"
+    mock_task.updated_at = "2026-01-01T00:00:00"
+
+    mock_template = MagicMock()
+    mock_template.name = "Make appointment"
+
+    with (
+        patch("app.modules.tasks.service.TaskService.get_task", new_callable=AsyncMock) as mock_get,
+        patch("app.modules.templates.repository.TemplateRepository.get_by_id", new_callable=AsyncMock) as mock_tmpl,
+    ):
         mock_get.return_value = mock_task
+        mock_tmpl.return_value = mock_template
 
         response = await authenticated_client.get("/tasks/1")
         assert response.status_code == 200
         assert response.json()["summary"] == "Appointment confirmed for March 20"
+        assert response.json()["template_name"] == "Make appointment"
 
 
 @pytest.mark.asyncio
@@ -142,30 +151,34 @@ async def test_cancel_task_not_cancellable(authenticated_client: AsyncClient) ->
 
 @pytest.mark.asyncio
 async def test_execute_task(authenticated_client: AsyncClient) -> None:
-    with patch("app.integrations.call_manager.CallManager.execute_task") as mock_execute:
-        mock_task = MagicMock()
-        mock_task.id = 1
-        mock_task.target_phone = "+37312345678"
-        mock_task.status = TaskStatus.COMPLETED
-        mock_task.template_id = 1
-        mock_task.slot_data = {}
-        mock_task.scheduled_time = None
-        mock_task.summary = "Appointment confirmed"
-        mock_task.error_reason = None
-        mock_task.created_at = "2026-01-01T00:00:00"
-        mock_task.updated_at = "2026-01-01T00:00:00"
-        mock_execute.return_value = mock_task
+    mock_task = MagicMock()
+    mock_task.id = 1
+    mock_task.target_phone = "+37312345678"
+    mock_task.status = TaskStatus.PENDING
+    mock_task.template_id = 1
+    mock_task.user_id = 1
+    mock_task.slot_data = {}
+    mock_task.scheduled_time = None
+    mock_task.summary = None
+    mock_task.error_reason = None
+    mock_task.created_at = "2026-01-01T00:00:00"
+    mock_task.updated_at = "2026-01-01T00:00:00"
+
+    with (
+        patch("app.modules.tasks.service.TaskService.get_task", new_callable=AsyncMock) as mock_get,
+        patch("app.modules.tasks.views._run_call_in_background", new_callable=AsyncMock),
+    ):
+        mock_get.return_value = mock_task
 
         response = await authenticated_client.post("/tasks/1/execute")
         assert response.status_code == 200
-        assert response.json()["status"] == "completed"
-        assert response.json()["summary"] == "Appointment confirmed"
+        assert response.json()["status"] == "in_progress"
 
 
 @pytest.mark.asyncio
 async def test_execute_task_not_found(authenticated_client: AsyncClient) -> None:
-    with patch("app.integrations.call_manager.CallManager.execute_task") as mock_execute:
-        mock_execute.side_effect = ValueError("Task 999 not found")
+    with patch("app.modules.tasks.service.TaskService.get_task", new_callable=AsyncMock) as mock_get:
+        mock_get.side_effect = TaskNotFoundError("Task with id 999 not found")
         response = await authenticated_client.post("/tasks/999/execute")
         assert response.status_code == 404
 
@@ -193,10 +206,13 @@ async def test_get_task_stats_unauthenticated(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_execute_completed_task(authenticated_client: AsyncClient) -> None:
-    with patch("app.integrations.call_manager.CallManager.execute_task") as mock_execute:
-        mock_execute.side_effect = ValueError("Task 1 cannot be executed (status: completed)")
+    mock_task = MagicMock()
+    mock_task.status = TaskStatus.COMPLETED
+
+    with patch("app.modules.tasks.service.TaskService.get_task", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_task
         response = await authenticated_client.post("/tasks/1/execute")
-        assert response.status_code == 404
+        assert response.status_code == 409
         assert "cannot be executed" in response.json()["detail"]
 
 

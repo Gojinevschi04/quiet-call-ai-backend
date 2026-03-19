@@ -3,7 +3,10 @@ from http import HTTPStatus
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
+from app.core.database import async_session
+from app.core.logging import get_logger
 from app.core.schema import MessageResponse
 from app.integrations.call_manager import CallManager
 from app.modules.notifications.email_service import EmailService
@@ -27,6 +30,8 @@ from app.modules.templates.repository import TemplateRepository
 from app.modules.users.middleware import get_current_user
 from app.modules.users.models import User
 from app.modules.users.schema import UserRole
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -87,10 +92,44 @@ async def get_tasks_view(
 ) -> TaskListResponse:
     tasks, total = await task_service.get_tasks(current_user.id, limit, offset, status)
     return TaskListResponse(
-        items=[_task_to_response(t) for t in tasks],
+        items=[_task_to_response(task) for task in tasks],
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get("/export")
+async def export_tasks_csv_view(
+    task_service: Annotated[TaskService, Depends(TaskService)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    status: TaskStatus | None = None,
+) -> StreamingResponse:
+    import csv
+    import io
+
+    tasks, _total = await task_service.get_tasks(current_user.id, limit=1000, offset=0, status=status)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Phone", "Status", "Template ID", "Scheduled Time", "Summary", "Error", "Created"])
+    for task in tasks:
+        writer.writerow([
+            task.id,
+            task.target_phone,
+            task.status,
+            task.template_id,
+            task.scheduled_time.isoformat() if task.scheduled_time else "",
+            task.summary or "",
+            task.error_reason or "",
+            task.created_at.isoformat(),
+        ])
+
+    csv_bytes = output.getvalue().encode("utf-8")
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=tasks_export.csv"},
     )
 
 
@@ -106,6 +145,7 @@ async def get_task_stats_view(
 async def get_task_view(
     task_id: int,
     task_service: Annotated[TaskService, Depends(TaskService)],
+    template_repository: Annotated[TemplateRepository, Depends(TemplateRepository)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> TaskResponse:
     try:
@@ -114,7 +154,9 @@ async def get_task_view(
     except TaskNotFoundError as e:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
 
-    return _task_to_response(task)
+    template = await template_repository.get_by_id(task.template_id)
+    template_name = template.name if template else None
+    return _task_to_response(task, template_name=template_name)
 
 
 @router.put("/{task_id}")
@@ -144,7 +186,8 @@ async def cancel_task_view(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> MessageResponse:
     try:
-        await task_service.cancel_task(task_id, current_user.id)
+        is_admin = current_user.role == UserRole.ADMIN
+        await task_service.cancel_task(task_id, current_user.id, is_admin=is_admin)
     except TaskNotFoundError as e:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
     except TaskNotCancellableError as e:
@@ -153,15 +196,64 @@ async def cancel_task_view(
     return MessageResponse(message="Task cancelled successfully")
 
 
+@router.post("/{task_id}/retry")
+async def retry_task_view(
+    task_id: int,
+    task_service: Annotated[TaskService, Depends(TaskService)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> TaskResponse:
+    is_admin = current_user.role == UserRole.ADMIN
+    try:
+        task = await task_service.retry_task(task_id, current_user.id, is_admin=is_admin)
+    except TaskNotFoundError as e:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
+    except InvalidTaskDataError as e:
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(e)) from e
+
+    asyncio.create_task(_run_call_in_background(task_id, current_user.id, is_admin))
+    task.status = TaskStatus.IN_PROGRESS
+    return _task_to_response(task)
+
+
+async def _run_call_in_background(task_id: int, user_id: int, is_admin: bool) -> None:
+    """Run call execution with its own DB session (not tied to the HTTP request)."""
+    from app.modules.calls.repository import CallSessionRepository, LogLineRepository
+    from app.modules.tasks.repository import TaskRepository as TaskRepo
+    from app.modules.templates.repository import TemplateRepository as TemplateRepo
+    from app.modules.users.repository import UserRepository
+
+    try:
+        async with async_session() as session:
+            call_manager = CallManager(
+                task_repository=TaskRepo(session=session),
+                template_repository=TemplateRepo(session=session),
+                call_session_repository=CallSessionRepository(session=session),
+                log_line_repository=LogLineRepository(session=session),
+                user_repository=UserRepository(session=session),
+            )
+            await call_manager.execute_task(task_id, user_id, is_admin=is_admin)
+    except Exception:
+        logger.exception("Background call execution failed for task %d", task_id)
+
+
 @router.post("/{task_id}/execute")
 async def execute_task_view(
     task_id: int,
-    call_manager: Annotated[CallManager, Depends(CallManager)],
+    task_service: Annotated[TaskService, Depends(TaskService)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> TaskResponse:
+    is_admin = current_user.role == UserRole.ADMIN
     try:
-        task = await call_manager.execute_task(task_id, current_user.id)
-    except ValueError as e:
+        task = await task_service.get_task(task_id, current_user.id, is_admin=is_admin)
+    except TaskNotFoundError as e:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
 
+    if task.status not in (TaskStatus.PENDING, TaskStatus.SCHEDULED):
+        raise HTTPException(
+            status_code=HTTPStatus.CONFLICT,
+            detail=f"Task with status '{task.status}' cannot be executed",
+        )
+
+    asyncio.create_task(_run_call_in_background(task_id, current_user.id, is_admin))
+    task.status = TaskStatus.IN_PROGRESS
     return _task_to_response(task)

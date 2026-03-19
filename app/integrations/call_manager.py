@@ -5,6 +5,7 @@ from fastapi import Depends
 
 from app.core.constants import CALL_ANSWER_TIMEOUT_SECONDS
 from app.core.logging import get_logger
+from app.core.ws_manager import call_broadcaster
 from app.integrations.conversation import ConversationManager
 from app.integrations.interfaces import ILLMProvider
 from app.integrations.openai_adapter import OpenAIAdapter
@@ -23,6 +24,9 @@ logger = get_logger(__name__)
 
 MAX_DIALOG_TURNS = 10
 MAX_RETRY_ON_NOISE = 3
+INTENT_REJECTION = "rejection"
+NOISE_APOLOGY = "I'm sorry, I didn't catch that. Could you please repeat?"
+REJECTION_FAREWELL = "I understand. Thank you for your time. Goodbye. [OBJECTIVE_FAILED]"
 
 
 class CallManager:
@@ -49,8 +53,11 @@ class CallManager:
             template_repository=template_repository,
         )
 
-    async def execute_task(self, task_id: int, user_id: int) -> Task:
-        task = await self.task_repository.get_by_id(task_id, user_id)
+    async def execute_task(self, task_id: int, user_id: int, is_admin: bool = False) -> Task:
+        if is_admin:
+            task = await self.task_repository.get_by_id_any_user(task_id)
+        else:
+            task = await self.task_repository.get_by_id(task_id, user_id)
         if not task:
             raise ValueError(f"Task {task_id} not found")
 
@@ -65,6 +72,8 @@ class CallManager:
         await self.task_repository.update(task)
         logger.info("Executing task %d: calling %s", task.id, task.target_phone)
 
+        await self._emit(task_id, "status_change", {"status": TaskStatus.IN_PROGRESS})
+
         call_session = CallSession(task_id=task.id, start_time=datetime.now())
         call_session = await self.call_session_repository.create(call_session)
         callback_url = f"{self._get_callback_base()}/webhooks/calls/{task.id}"
@@ -74,6 +83,8 @@ class CallManager:
             lang = template.language or "en"
             system_prompt = self._build_system_prompt(template.base_script, task.slot_data, lang)
 
+            await self._emit(task_id, "dialing", {"phone": task.target_phone})
+
             call_sid = await self._voice.initiate_call(
                 to_phone=task.target_phone,
                 callback_url=callback_url,
@@ -81,18 +92,24 @@ class CallManager:
             logger.info("Call SID: %s for task %d (language: %s)", call_sid, task.id, lang)
             await self._wait_for_answer(call_sid)
 
+            await self._emit(task_id, "call_answered")
+
             opening = await self._llm.generate_response(conv.history, system_prompt)
             conv.add_agent_message(opening, call_session.id)
+            await self._emit(task_id, "message", {"speaker": "agent", "text": opening})
+
             interlocutor_text = await self._voice.say_and_gather(call_sid, opening, callback_url, lang)
 
             await self._run_dialog_loop(
-                call_sid, conv, call_session, system_prompt, callback_url, lang, interlocutor_text
+                task_id, call_sid, conv, call_session, system_prompt, callback_url, lang, interlocutor_text
             )
 
             await self._voice.hangup(call_sid)
             call_session.duration = int((datetime.now() - call_session.start_time).total_seconds())
             call_session.recording_uri = await self._voice.get_recording_url(call_sid)
             await self.call_session_repository.update(call_session)
+
+            await self._emit(task_id, "generating_summary")
 
             summary = await self._generate_summary(conv, lang)
             task.status = TaskStatus.COMPLETED if conv.has_objective_achieved() else TaskStatus.FAILED
@@ -111,11 +128,19 @@ class CallManager:
             await self.log_line_repository.create_many(conv.log_lines)
 
         logger.info("Task %d finished with status: %s", task.id, task.status)
+
+        await self._emit(task_id, "call_ended", {
+            "status": task.status,
+            "summary": task.summary,
+            "error_reason": task.error_reason,
+        })
+
         await self._post_call.process(task)
         return task
 
     async def _run_dialog_loop(
         self,
+        task_id: int,
         call_sid: str,
         conv: ConversationManager,
         call_session: CallSession,
@@ -130,23 +155,31 @@ class CallManager:
                 if conv.noise_retries >= conv.max_noise_retries:
                     conv.add_agent_message("[Max noise retries reached]", call_session.id)
                     break
-                apology = "I'm sorry, I didn't catch that. Could you please repeat?"
-                conv.add_agent_message(apology, call_session.id)
-                interlocutor_text = await self._voice.say_and_gather(call_sid, apology, callback_url, lang)
+                conv.add_agent_message(NOISE_APOLOGY, call_session.id)
+                await self._emit(task_id, "message", {"speaker": "agent", "text": NOISE_APOLOGY})
+                interlocutor_text = await self._voice.say_and_gather(
+                    call_sid, NOISE_APOLOGY, callback_url, lang
+                )
                 continue
 
             conv.noise_retries = 0
             detected_intent = await self._llm.detect_intent(interlocutor_text)
             conv.add_interlocutor_message(interlocutor_text, detected_intent, call_session.id)
+            await self._emit(task_id, "message", {
+                "speaker": "interlocutor",
+                "text": interlocutor_text,
+                "intent": detected_intent,
+            })
 
-            if detected_intent == "rejection":
-                farewell = "I understand. Thank you for your time. Goodbye. [OBJECTIVE_FAILED]"
-                conv.add_agent_message(farewell, call_session.id)
-                await self._voice.say_and_gather(call_sid, farewell, callback_url, lang)
+            if detected_intent == INTENT_REJECTION:
+                conv.add_agent_message(REJECTION_FAREWELL, call_session.id)
+                await self._emit(task_id, "message", {"speaker": "agent", "text": REJECTION_FAREWELL})
+                await self._voice.say_and_gather(call_sid, REJECTION_FAREWELL, callback_url, lang)
                 break
 
             agent_reply = await self._llm.generate_response(conv.history, system_prompt)
             conv.add_agent_message(agent_reply, call_session.id)
+            await self._emit(task_id, "message", {"speaker": "agent", "text": agent_reply})
 
             if conv.is_complete(agent_reply):
                 await self._voice.say_and_gather(call_sid, agent_reply, callback_url, lang)
@@ -184,3 +217,8 @@ class CallManager:
         from app.core.config import settings
 
         return settings.BASE_URL
+
+    async def _emit(self, task_id: int, event: str, data: dict | None = None) -> None:
+        """Emit event to WebSocket clients if any are listening."""
+        if call_broadcaster.has_listeners(task_id):
+            await call_broadcaster.emit(task_id, event, data)

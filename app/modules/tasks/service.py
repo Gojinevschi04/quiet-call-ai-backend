@@ -103,8 +103,11 @@ class TaskService:
         logger.info("Edited task %d by user %d", task_id, user_id)
         return await self.task_repository.update(task)
 
-    async def cancel_task(self, task_id: int, user_id: int) -> Task:
-        task = await self.task_repository.get_by_id(task_id, user_id)
+    async def cancel_task(self, task_id: int, user_id: int, is_admin: bool = False) -> Task:
+        if is_admin:
+            task = await self.task_repository.get_by_id_any_user(task_id)
+        else:
+            task = await self.task_repository.get_by_id(task_id, user_id)
         if not task:
             raise TaskNotFoundError(f"Task with id {task_id} not found")
 
@@ -114,6 +117,38 @@ class TaskService:
         task.status = TaskStatus.FAILED
         task.error_reason = "Cancelled by user"
         return await self.task_repository.update(task)
+
+    async def retry_task(self, task_id: int, user_id: int, is_admin: bool = False) -> Task:
+        if is_admin:
+            task = await self.task_repository.get_by_id_any_user(task_id)
+        else:
+            task = await self.task_repository.get_by_id(task_id, user_id)
+        if not task:
+            raise TaskNotFoundError(f"Task with id {task_id} not found")
+
+        if task.status != TaskStatus.FAILED:
+            raise InvalidTaskDataError(f"Only failed tasks can be retried (current status: {task.status})")
+
+        await self._cleanup_old_call_session(task_id)
+
+        task.status = TaskStatus.PENDING
+        task.error_reason = None
+        task.summary = None
+        return await self.task_repository.update(task)
+
+    async def _cleanup_old_call_session(self, task_id: int) -> None:
+        from app.modules.calls.repository import CallSessionRepository, LogLineRepository
+
+        session = self.task_repository._session
+        call_session_repo = CallSessionRepository(session=session)
+        log_line_repo = LogLineRepository(session=session)
+
+        call_session = await call_session_repo.get_by_task_id(task_id)
+        if not call_session:
+            return
+
+        await log_line_repo.delete_by_session_id(call_session.id)
+        await call_session_repo.delete(call_session)
 
     async def get_stats(self, user_id: int) -> TaskStatsResponse:
         counts = await self.task_repository.count_by_status(user_id)

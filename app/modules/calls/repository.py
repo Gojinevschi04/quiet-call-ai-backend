@@ -22,6 +22,10 @@ class CallSessionRepository(Repository):
         await self._session.refresh(session)
         return session
 
+    async def delete(self, session: CallSession) -> None:
+        await self._session.delete(session)
+        await self._session.commit()
+
     async def count_total(self) -> int:
         result = await self._session.exec(select(func.count()).select_from(CallSession))
         return result.one()
@@ -41,6 +45,12 @@ class LogLineRepository(Repository):
         for line in log_lines:
             await self._session.refresh(line)
         return log_lines
+
+    async def delete_by_session_id(self, session_id: int) -> None:
+        result = await self._session.exec(select(LogLine).where(LogLine.session_id == session_id))
+        for line in result.all():
+            await self._session.delete(line)
+        await self._session.commit()
 
     async def get_by_session_id(self, session_id: int) -> Sequence[LogLine]:
         result = await self._session.exec(
