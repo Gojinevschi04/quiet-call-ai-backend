@@ -14,6 +14,7 @@ from app.modules.files.views import router as files_router
 from app.modules.tasks.views import router as tasks_router
 from app.modules.templates.views import router as templates_router
 from app.modules.users.views import router as users_router
+from app.modules.webhooks.realtime_ws import router as realtime_ws_router
 from app.modules.webhooks.views import router as webhooks_router
 
 
@@ -48,6 +49,7 @@ def get_application() -> FastAPI:
     app.include_router(feedback_router)
     app.include_router(ws_router)
     app.include_router(webhooks_router)
+    app.include_router(realtime_ws_router)
 
     return app
 

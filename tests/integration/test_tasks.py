@@ -384,3 +384,203 @@ async def test_edit_task_invalid_data(authenticated_client: AsyncClient) -> None
 async def test_edit_task_unauthenticated(client: AsyncClient) -> None:
     response = await client.put("/tasks/1", json={"target_phone": "+37399999999"})
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_triggers_email_notification(authenticated_client: AsyncClient) -> None:
+    from datetime import datetime, timedelta
+
+    future_time = datetime.now() + timedelta(days=3)
+    scheduled_task = MagicMock()
+    scheduled_task.id = 1
+    scheduled_task.target_phone = "+37312345678"
+    scheduled_task.status = TaskStatus.SCHEDULED
+    scheduled_task.template_id = 1
+    scheduled_task.slot_data = {}
+    scheduled_task.scheduled_time = future_time
+    scheduled_task.summary = None
+    scheduled_task.error_reason = None
+    scheduled_task.created_at = future_time
+    scheduled_task.updated_at = future_time
+
+    template = MagicMock()
+    template.language = "ro"
+
+    with patch("app.modules.tasks.service.TaskService.create_task",
+               new=AsyncMock(return_value=scheduled_task)), \
+         patch("app.modules.templates.repository.TemplateRepository.get_by_id",
+               new=AsyncMock(return_value=template)), \
+         patch("app.modules.tasks.views.EmailService") as mock_email_service_cls:
+        mock_email_service = mock_email_service_cls.return_value
+        mock_email_service.send_task_scheduled = AsyncMock()
+
+        response = await authenticated_client.post(
+            "/tasks/",
+            json={
+                "target_phone": "+37312345678",
+                "template_id": 1,
+                "slot_data": {},
+                "scheduled_time": future_time.isoformat(),
+            },
+        )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "scheduled"
+
+
+@pytest.mark.asyncio
+async def test_export_tasks_returns_csv(authenticated_client: AsyncClient) -> None:
+    from datetime import datetime
+
+    task_one = MagicMock()
+    task_one.id = 1
+    task_one.target_phone = "+37312345678"
+    task_one.status = TaskStatus.COMPLETED
+    task_one.template_id = 1
+    task_one.scheduled_time = None
+    task_one.summary = "Booked."
+    task_one.error_reason = None
+    task_one.created_at = datetime(2026, 4, 1, 10, 0)
+
+    task_two = MagicMock()
+    task_two.id = 2
+    task_two.target_phone = "+37398765432"
+    task_two.status = TaskStatus.FAILED
+    task_two.template_id = 2
+    task_two.scheduled_time = datetime(2026, 4, 5, 15, 0)
+    task_two.summary = None
+    task_two.error_reason = "No answer"
+    task_two.created_at = datetime(2026, 4, 2, 11, 0)
+
+    with patch("app.modules.tasks.service.TaskService.get_tasks",
+               new=AsyncMock(return_value=([task_one, task_two], 2))):
+        response = await authenticated_client.get("/tasks/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "tasks_export.csv" in response.headers["content-disposition"]
+
+    csv_body = response.text
+    assert "ID,Phone,Status,Template ID,Scheduled Time,Summary,Error,Created" in csv_body
+    assert "+37312345678" in csv_body
+    assert "No answer" in csv_body
+    assert "Booked." in csv_body
+
+
+@pytest.mark.asyncio
+async def test_export_tasks_with_status_filter(authenticated_client: AsyncClient) -> None:
+    with patch("app.modules.tasks.service.TaskService.get_tasks",
+               new=AsyncMock(return_value=([], 0))) as mock_get_tasks:
+        response = await authenticated_client.get("/tasks/export?status=failed")
+
+    assert response.status_code == 200
+    call_kwargs = mock_get_tasks.await_args.kwargs
+    assert call_kwargs["status"] == TaskStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_export_tasks_unauthenticated(client: AsyncClient) -> None:
+    response = await client.get("/tasks/export")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_retry_task_success(authenticated_client: AsyncClient) -> None:
+    retried_task = MagicMock()
+    retried_task.id = 1
+    retried_task.target_phone = "+37312345678"
+    retried_task.status = TaskStatus.PENDING
+    retried_task.template_id = 1
+    retried_task.slot_data = {}
+    retried_task.scheduled_time = None
+    retried_task.summary = None
+    retried_task.error_reason = None
+    retried_task.created_at = "2026-01-01T00:00:00"
+    retried_task.updated_at = "2026-01-01T00:00:00"
+
+    with patch("app.modules.tasks.service.TaskService.retry_task",
+               new=AsyncMock(return_value=retried_task)), \
+         patch("app.modules.tasks.views._run_call_in_background", new=AsyncMock()):
+        response = await authenticated_client.post("/tasks/1/retry")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_retry_task_not_found(authenticated_client: AsyncClient) -> None:
+    with patch("app.modules.tasks.service.TaskService.retry_task",
+               new=AsyncMock(side_effect=TaskNotFoundError("missing"))):
+        response = await authenticated_client.post("/tasks/999/retry")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_retry_task_not_failed(authenticated_client: AsyncClient) -> None:
+    with patch("app.modules.tasks.service.TaskService.retry_task",
+               new=AsyncMock(side_effect=InvalidTaskDataError("Only failed tasks"))):
+        response = await authenticated_client.post("/tasks/1/retry")
+
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_retry_task_unauthenticated(client: AsyncClient) -> None:
+    response = await client.post("/tasks/1/retry")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_run_call_in_background_uses_legacy_manager_when_flag_off() -> None:
+    from app.modules.tasks.views import _run_call_in_background
+
+    mock_manager = MagicMock()
+    mock_manager.execute_task = AsyncMock(return_value=None)
+
+    with patch("app.modules.tasks.views.async_session") as mock_session_cls, \
+         patch("app.core.config.settings.USE_REALTIME_API", False), \
+         patch("app.modules.tasks.views.CallManager", return_value=mock_manager):
+        mock_session = AsyncMock()
+        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await _run_call_in_background(task_id=1, user_id=2, is_admin=False)
+
+    mock_manager.execute_task.assert_awaited_once_with(1, 2, is_admin=False)
+
+
+@pytest.mark.asyncio
+async def test_run_call_in_background_uses_realtime_manager_when_flag_on() -> None:
+    from app.modules.tasks.views import _run_call_in_background
+
+    mock_manager = MagicMock()
+    mock_manager.execute_task = AsyncMock(return_value=None)
+
+    with patch("app.modules.tasks.views.async_session") as mock_session_cls, \
+         patch("app.core.config.settings.USE_REALTIME_API", True), \
+         patch("app.modules.tasks.views.RealtimeCallManager", return_value=mock_manager):
+        mock_session = AsyncMock()
+        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await _run_call_in_background(task_id=3, user_id=4, is_admin=True)
+
+    mock_manager.execute_task.assert_awaited_once_with(3, 4, is_admin=True)
+
+
+@pytest.mark.asyncio
+async def test_run_call_in_background_swallows_exceptions() -> None:
+    from app.modules.tasks.views import _run_call_in_background
+
+    mock_manager = MagicMock()
+    mock_manager.execute_task = AsyncMock(side_effect=RuntimeError("boom"))
+
+    with patch("app.modules.tasks.views.async_session") as mock_session_cls, \
+         patch("app.core.config.settings.USE_REALTIME_API", False), \
+         patch("app.modules.tasks.views.CallManager", return_value=mock_manager):
+        mock_session = AsyncMock()
+        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await _run_call_in_background(task_id=1, user_id=2, is_admin=False)

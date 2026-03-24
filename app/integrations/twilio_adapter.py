@@ -74,6 +74,40 @@ class TwilioAdapter(IVoiceProvider):
 
         raise last_error or RuntimeError("Call initiation failed after all retries")
 
+    async def initiate_call_with_twiml(
+        self,
+        to_phone: str,
+        twiml: str,
+        status_callback_url: str,
+        recording_callback_url: str,
+    ) -> str:
+        """Initiate outbound call using inline TwiML (used by realtime streaming path)."""
+        last_error: Exception | None = None
+
+        for attempt in range(1, MAX_CALL_RETRIES + 1):
+            try:
+                logger.info("Initiating realtime call to %s (attempt %d/%d)", to_phone, attempt, MAX_CALL_RETRIES)
+                call = await self._run_sync(
+                    self._client.calls.create,
+                    to=to_phone,
+                    from_=self._from_phone,
+                    twiml=twiml,
+                    record=True,
+                    status_callback=status_callback_url,
+                    status_callback_event=["initiated", "ringing", "answered", "completed"],
+                    recording_status_callback=recording_callback_url,
+                    recording_status_callback_event=["completed"],
+                )
+                logger.info("Realtime call initiated with SID: %s", call.sid)
+                return call.sid
+            except Exception as e:
+                last_error = e
+                logger.warning("Realtime call attempt %d failed: %s", attempt, str(e))
+                if attempt < MAX_CALL_RETRIES:
+                    await asyncio.sleep(RETRY_DELAY_SECONDS)
+
+        raise last_error or RuntimeError("Realtime call initiation failed after all retries")
+
     async def hangup(self, call_sid: str) -> None:
         logger.info("Hanging up call %s", call_sid)
         try:

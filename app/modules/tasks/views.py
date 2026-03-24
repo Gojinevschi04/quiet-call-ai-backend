@@ -5,10 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from app.core.config import settings
 from app.core.database import async_session
 from app.core.logging import get_logger
 from app.core.schema import MessageResponse
 from app.integrations.call_manager import CallManager
+from app.integrations.realtime_call_manager import RealtimeCallManager
 from app.modules.notifications.email_service import EmailService
 from app.modules.tasks.exceptions import (
     InvalidTaskDataError,
@@ -224,14 +226,15 @@ async def _run_call_in_background(task_id: int, user_id: int, is_admin: bool) ->
 
     try:
         async with async_session() as session:
-            call_manager = CallManager(
-                task_repository=TaskRepo(session=session),
-                template_repository=TemplateRepo(session=session),
-                call_session_repository=CallSessionRepository(session=session),
-                log_line_repository=LogLineRepository(session=session),
-                user_repository=UserRepository(session=session),
-            )
-            await call_manager.execute_task(task_id, user_id, is_admin=is_admin)
+            repos = {
+                "task_repository": TaskRepo(session=session),
+                "template_repository": TemplateRepo(session=session),
+                "call_session_repository": CallSessionRepository(session=session),
+                "log_line_repository": LogLineRepository(session=session),
+                "user_repository": UserRepository(session=session),
+            }
+            manager = RealtimeCallManager(**repos) if settings.USE_REALTIME_API else CallManager(**repos)
+            await manager.execute_task(task_id, user_id, is_admin=is_admin)
     except Exception:
         logger.exception("Background call execution failed for task %d", task_id)
 

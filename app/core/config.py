@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     FEEDBACK_EMAILS: str = ""  # Comma-separated list of emails to receive feedback
     TEST_PHONE_OVERRIDE: str = ""  # When set, all calls go to this number instead of task's target_phone
 
+    USE_REALTIME_API: bool = False
+    OPENAI_REALTIME_MODEL: str = "gpt-realtime"
+    OPENAI_REALTIME_VOICE: str = "alloy"
+    REALTIME_VAD_MODE: str = "semantic_vad"
+    REALTIME_VAD_EAGERNESS: str = "medium"
+
     model_config = SettingsConfigDict(
         env_file=Path(__file__).parent.parent.parent / ".env",
         extra="ignore",
