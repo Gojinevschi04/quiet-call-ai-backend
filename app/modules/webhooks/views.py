@@ -6,6 +6,7 @@ from app.core.logging import get_logger
 from app.integrations.twilio_adapter import set_gather_result
 from app.modules.calls.repository import CallSessionRepository
 from app.modules.tasks.repository import TaskRepository
+from app.modules.tasks.schema import TaskStatus
 
 logger = get_logger(__name__)
 
@@ -75,15 +76,27 @@ async def twilio_status_callback(
     CallSid: str = Form(default=""),
     CallStatus: str = Form(default=""),
     CallDuration: str = Form(default="0"),
+    AnsweredBy: str = Form(default=""),
 ) -> Response:
     """Twilio status callback — receives call state changes."""
     logger.info(
-        "Twilio status update for task %d: SID=%s, status=%s, duration=%s",
-        task_id,
-        CallSid,
-        CallStatus,
-        CallDuration,
+        "Twilio status update for task %d: SID=%s, status=%s, duration=%s, answered_by=%s",
+        task_id, CallSid, CallStatus, CallDuration, AnsweredBy,
     )
+
+    if AnsweredBy and AnsweredBy.startswith("machine") and CallSid:
+        logger.warning("[task=%d] Voicemail/answering machine detected (%s), hanging up",
+                       task_id, AnsweredBy)
+        from app.integrations.twilio_adapter import TwilioAdapter
+        try:
+            await TwilioAdapter().hangup(CallSid)
+        except Exception:
+            logger.exception("[task=%d] Failed to hang up on machine detection", task_id)
+        task = await task_repository.get_by_id_any_user(task_id)
+        if task and task.status not in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+            task.status = TaskStatus.FAILED
+            task.error_reason = f"Reached voicemail ({AnsweredBy})"
+            await task_repository.update(task)
 
     if CallStatus == "completed":
         call_session = await call_session_repository.get_by_task_id(task_id)

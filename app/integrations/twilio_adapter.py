@@ -97,6 +97,9 @@ class TwilioAdapter(IVoiceProvider):
                     status_callback_event=["initiated", "ringing", "answered", "completed"],
                     recording_status_callback=recording_callback_url,
                     recording_status_callback_event=["completed"],
+                    machine_detection="DetectMessageEnd",
+                    async_amd="true",
+                    async_amd_status_callback=status_callback_url,
                 )
                 logger.info("Realtime call initiated with SID: %s", call.sid)
                 return call.sid
