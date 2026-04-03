@@ -268,3 +268,150 @@ async def test_delete_user_not_found() -> None:
     result = await service.delete_user(999)
 
     assert result is False
+
+
+@pytest.mark.asyncio
+async def test_delete_user_cascades_tasks_sessions_and_log_lines(mock_user: User) -> None:
+    """User with tasks + call sessions + log lines is fully cascade-deleted."""
+    mock_task_ids_result = MagicMock()
+    mock_task_ids_result.all.return_value = [10, 11]
+    mock_session_ids_result = MagicMock()
+    mock_session_ids_result.all.return_value = [100]
+    mock_log_line = MagicMock()
+    mock_log_lines_result = MagicMock()
+    mock_log_lines_result.all.return_value = [mock_log_line]
+    mock_call_session = MagicMock()
+    mock_call_sessions_result = MagicMock()
+    mock_call_sessions_result.all.return_value = [mock_call_session]
+    mock_task = MagicMock()
+    mock_tasks_result = MagicMock()
+    mock_tasks_result.all.return_value = [mock_task]
+
+    mock_session = AsyncMock()
+    mock_session.exec = AsyncMock(side_effect=[
+        mock_task_ids_result,
+        mock_session_ids_result,
+        mock_log_lines_result,
+        mock_call_sessions_result,
+        mock_tasks_result,
+    ])
+    mock_session.delete = AsyncMock()
+    mock_session.commit = AsyncMock()
+
+    mock_user_repo = MagicMock(spec=UserRepository)
+    mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
+    mock_user_repo._session = mock_session
+
+    service = _build_service(user_repo=mock_user_repo)
+    result = await service.delete_user(1)
+
+    assert result is True
+    assert mock_session.delete.await_count == 4
+    mock_session.delete.assert_any_await(mock_log_line)
+    mock_session.delete.assert_any_await(mock_call_session)
+    mock_session.delete.assert_any_await(mock_task)
+    mock_session.delete.assert_any_await(mock_user)
+    mock_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_user_with_tasks_but_no_sessions(mock_user: User) -> None:
+    mock_task_ids_result = MagicMock()
+    mock_task_ids_result.all.return_value = [10]
+    mock_empty_sessions_result = MagicMock()
+    mock_empty_sessions_result.all.return_value = []
+    mock_task = MagicMock()
+    mock_tasks_result = MagicMock()
+    mock_tasks_result.all.return_value = [mock_task]
+
+    mock_session = AsyncMock()
+    mock_session.exec = AsyncMock(side_effect=[
+        mock_task_ids_result,
+        mock_empty_sessions_result,
+        mock_tasks_result,
+    ])
+    mock_session.delete = AsyncMock()
+    mock_session.commit = AsyncMock()
+
+    mock_user_repo = MagicMock(spec=UserRepository)
+    mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
+    mock_user_repo._session = mock_session
+
+    service = _build_service(user_repo=mock_user_repo)
+    result = await service.delete_user(1)
+
+    assert result is True
+    assert mock_session.delete.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_extended_stats_assembles_all_four_sections() -> None:
+    from datetime import datetime
+
+    template_result = MagicMock()
+    template_result.all.return_value = [("Make appointment", 15), ("Confirm reservation", 7)]
+
+    duration_result = MagicMock()
+    duration_result.one.return_value = 65.4
+
+    day_one = datetime(2026, 4, 1)
+    day_two = datetime(2026, 4, 2)
+    tasks_per_day_result = MagicMock()
+    tasks_per_day_result.all.return_value = [(day_one, 3), (day_two, 5)]
+
+    month_one = datetime(2026, 1, 1)
+    users_per_month_result = MagicMock()
+    users_per_month_result.all.return_value = [(month_one, 4)]
+
+    mock_session = AsyncMock()
+    mock_session.exec = AsyncMock(side_effect=[
+        template_result,
+        duration_result,
+        tasks_per_day_result,
+        users_per_month_result,
+    ])
+
+    mock_user_repo = MagicMock(spec=UserRepository)
+    mock_user_repo._session = mock_session
+
+    service = _build_service(user_repo=mock_user_repo)
+    stats = await service.get_extended_stats()
+
+    assert stats["tasks_per_template"] == [
+        {"name": "Make appointment", "count": 15},
+        {"name": "Confirm reservation", "count": 7},
+    ]
+    assert stats["average_call_duration"] == 65
+    assert stats["tasks_per_day"] == [
+        {"date": "2026-04-01", "count": 3},
+        {"date": "2026-04-02", "count": 5},
+    ]
+    assert stats["users_per_month"] == [{"date": "2026-01-01", "count": 4}]
+
+
+@pytest.mark.asyncio
+async def test_get_extended_stats_average_duration_is_zero_when_no_calls() -> None:
+    empty_result = MagicMock()
+    empty_result.all.return_value = []
+
+    duration_result = MagicMock()
+    duration_result.one.return_value = None
+
+    mock_session = AsyncMock()
+    mock_session.exec = AsyncMock(side_effect=[
+        empty_result,
+        duration_result,
+        empty_result,
+        empty_result,
+    ])
+
+    mock_user_repo = MagicMock(spec=UserRepository)
+    mock_user_repo._session = mock_session
+
+    service = _build_service(user_repo=mock_user_repo)
+    stats = await service.get_extended_stats()
+
+    assert stats["average_call_duration"] == 0
+    assert stats["tasks_per_template"] == []
+    assert stats["tasks_per_day"] == []
+    assert stats["users_per_month"] == []

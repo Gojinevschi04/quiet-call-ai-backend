@@ -1,4 +1,5 @@
-from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -134,6 +135,7 @@ async def test_get_stats() -> None:
 
 @pytest.mark.asyncio
 async def test_create_task_with_scheduled_time(mock_template: DialogTemplate) -> None:
+    future_time = datetime.now() + timedelta(days=5)
     scheduled_task = Task(
         id=2,
         target_phone="+37312345678",
@@ -141,7 +143,7 @@ async def test_create_task_with_scheduled_time(mock_template: DialogTemplate) ->
         template_id=1,
         user_id=1,
         slot_data={"preferred_date": "2026-03-20", "preferred_time": "10:00"},
-        scheduled_time="2026-03-25T10:00:00",
+        scheduled_time=future_time,
     )
     mock_task_repo = MagicMock(spec=TaskRepository)
     mock_task_repo.create = AsyncMock(return_value=scheduled_task)
@@ -153,7 +155,7 @@ async def test_create_task_with_scheduled_time(mock_template: DialogTemplate) ->
         target_phone="+37312345678",
         template_id=1,
         slot_data={"preferred_date": "2026-03-20", "preferred_time": "10:00"},
-        scheduled_time="2026-03-25T10:00:00",
+        scheduled_time=future_time.isoformat(),
     )
     result = await service.create_task(data, user_id=1)
 
@@ -361,7 +363,176 @@ async def test_edit_task_missing_required_slots(mock_task: Task, mock_template: 
     mock_template_repo.get_by_id = AsyncMock(return_value=mock_template)
 
     service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
-    data = TaskEditRequest(slot_data={"preferred_date": "2026-04-01"})  # missing preferred_time
+    data = TaskEditRequest(slot_data={"preferred_date": "2026-04-01"})
 
     with pytest.raises(InvalidTaskDataError, match="Missing required slots"):
         await service.edit_task(1, user_id=1, data=data)
+
+
+@pytest.mark.asyncio
+async def test_edit_task_set_scheduled_time_flips_status_to_scheduled(mock_task: Task) -> None:
+    mock_task.status = TaskStatus.PENDING
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id = AsyncMock(return_value=mock_task)
+    mock_task_repo.update = AsyncMock(return_value=mock_task)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+    future_time = datetime.now() + timedelta(days=2)
+    data = TaskEditRequest(scheduled_time=future_time.isoformat())
+
+    result = await service.edit_task(1, user_id=1, data=data)
+
+    assert result.status == TaskStatus.SCHEDULED
+    assert result.scheduled_time is not None
+
+
+@pytest.mark.asyncio
+async def test_edit_task_admin_uses_any_user_lookup(mock_task: Task) -> None:
+    mock_task.status = TaskStatus.PENDING
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id_any_user = AsyncMock(return_value=mock_task)
+    mock_task_repo.get_by_id = AsyncMock()
+    mock_task_repo.update = AsyncMock(return_value=mock_task)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+    data = TaskEditRequest(target_phone="+37360000000")
+
+    await service.edit_task(task_id=1, user_id=99, data=data, is_admin=True)
+
+    mock_task_repo.get_by_id_any_user.assert_awaited_once_with(1)
+    mock_task_repo.get_by_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_task_admin_uses_any_user_lookup(mock_task: Task) -> None:
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id_any_user = AsyncMock(return_value=mock_task)
+    mock_task_repo.get_by_id = AsyncMock()
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+    result = await service.get_task(task_id=1, user_id=99, is_admin=True)
+
+    assert result is mock_task
+    mock_task_repo.get_by_id_any_user.assert_awaited_once_with(1)
+    mock_task_repo.get_by_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_admin_uses_any_user_lookup(mock_task: Task) -> None:
+    mock_task.status = TaskStatus.PENDING
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id_any_user = AsyncMock(return_value=mock_task)
+    mock_task_repo.get_by_id = AsyncMock()
+    mock_task_repo.update = AsyncMock(return_value=mock_task)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+    await service.cancel_task(task_id=1, user_id=99, is_admin=True)
+
+    mock_task_repo.get_by_id_any_user.assert_awaited_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_retry_task_success(mock_task: Task) -> None:
+    mock_task.status = TaskStatus.FAILED
+    mock_task.error_reason = "network error"
+    mock_task.summary = "old summary"
+
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id = AsyncMock(return_value=mock_task)
+    mock_task_repo.update = AsyncMock(return_value=mock_task)
+    mock_task_repo._session = MagicMock()
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+
+    with patch("app.modules.calls.repository.CallSessionRepository") as mock_session_repo_cls, \
+         patch("app.modules.calls.repository.LogLineRepository") as mock_line_repo_cls:
+        mock_session_repo = mock_session_repo_cls.return_value
+        mock_session_repo.get_by_task_id = AsyncMock(return_value=None)
+        mock_line_repo_cls.return_value = MagicMock()
+
+        result = await service.retry_task(task_id=1, user_id=1)
+
+    assert result.status == TaskStatus.PENDING
+    assert result.error_reason is None
+    assert result.summary is None
+
+
+@pytest.mark.asyncio
+async def test_retry_task_not_found() -> None:
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id = AsyncMock(return_value=None)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+
+    with pytest.raises(TaskNotFoundError):
+        await service.retry_task(task_id=999, user_id=1)
+
+
+@pytest.mark.asyncio
+async def test_retry_task_not_failed_raises(mock_task: Task) -> None:
+    mock_task.status = TaskStatus.COMPLETED
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id = AsyncMock(return_value=mock_task)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+
+    with pytest.raises(InvalidTaskDataError, match="Only failed tasks"):
+        await service.retry_task(task_id=1, user_id=1)
+
+
+@pytest.mark.asyncio
+async def test_retry_task_cleans_up_existing_call_session(mock_task: Task) -> None:
+    mock_task.status = TaskStatus.FAILED
+    mock_existing_session = MagicMock()
+    mock_existing_session.id = 42
+
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id = AsyncMock(return_value=mock_task)
+    mock_task_repo.update = AsyncMock(return_value=mock_task)
+    mock_task_repo._session = MagicMock()
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+
+    with patch("app.modules.calls.repository.CallSessionRepository") as mock_session_repo_cls, \
+         patch("app.modules.calls.repository.LogLineRepository") as mock_line_repo_cls:
+        mock_session_repo = mock_session_repo_cls.return_value
+        mock_session_repo.get_by_task_id = AsyncMock(return_value=mock_existing_session)
+        mock_session_repo.delete = AsyncMock()
+        mock_line_repo = mock_line_repo_cls.return_value
+        mock_line_repo.delete_by_session_id = AsyncMock()
+
+        await service.retry_task(task_id=1, user_id=1)
+
+        mock_line_repo.delete_by_session_id.assert_awaited_once_with(42)
+        mock_session_repo.delete.assert_awaited_once_with(mock_existing_session)
+
+
+@pytest.mark.asyncio
+async def test_retry_task_admin_uses_any_user_lookup(mock_task: Task) -> None:
+    mock_task.status = TaskStatus.FAILED
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id_any_user = AsyncMock(return_value=mock_task)
+    mock_task_repo.get_by_id = AsyncMock()
+    mock_task_repo.update = AsyncMock(return_value=mock_task)
+    mock_task_repo._session = MagicMock()
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+
+    with patch("app.modules.calls.repository.CallSessionRepository") as mock_session_repo_cls, \
+         patch("app.modules.calls.repository.LogLineRepository"):
+        mock_session_repo = mock_session_repo_cls.return_value
+        mock_session_repo.get_by_task_id = AsyncMock(return_value=None)
+
+        await service.retry_task(task_id=1, user_id=99, is_admin=True)
+
+    mock_task_repo.get_by_id_any_user.assert_awaited_once_with(1)
+    mock_task_repo.get_by_id.assert_not_called()
