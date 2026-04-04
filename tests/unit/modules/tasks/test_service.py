@@ -135,7 +135,7 @@ async def test_get_stats() -> None:
 
 @pytest.mark.asyncio
 async def test_create_task_with_scheduled_time(mock_template: DialogTemplate) -> None:
-    future_time = datetime.now() + timedelta(days=5)
+    future_time = (datetime.now() + timedelta(days=5)).replace(hour=10, minute=0, second=0, microsecond=0)
     scheduled_task = Task(
         id=2,
         target_phone="+37312345678",
@@ -378,7 +378,7 @@ async def test_edit_task_set_scheduled_time_flips_status_to_scheduled(mock_task:
     mock_template_repo = MagicMock(spec=TemplateRepository)
 
     service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
-    future_time = datetime.now() + timedelta(days=2)
+    future_time = (datetime.now() + timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
     data = TaskEditRequest(scheduled_time=future_time.isoformat())
 
     result = await service.edit_task(1, user_id=1, data=data)

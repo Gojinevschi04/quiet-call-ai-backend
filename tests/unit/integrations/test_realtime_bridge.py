@@ -179,3 +179,49 @@ async def test_handle_idle_timeout_noops_when_ws_closed() -> None:
 
     bridge.openai_ws.send.assert_not_called()
     assert bridge._silence_nudges == 0
+
+
+@pytest.mark.asyncio
+async def test_handle_duration_timeout_sets_failed_outcome_and_queues_hangup() -> None:
+    from unittest.mock import patch as mock_patch
+
+    import websockets.protocol
+
+    bridge = _make_bridge("ro")
+    bridge.openai_ws = MagicMock()
+    bridge.openai_ws.send = AsyncMock()
+    bridge.openai_ws.state = websockets.protocol.State.OPEN
+
+    with mock_patch("app.core.config.settings.MAX_CALL_DURATION_SECONDS", 0):
+        await bridge._handle_duration_timeout()
+
+    assert bridge.outcome is not None
+    assert bridge.outcome["status"] == "failed"
+    assert "Max call duration" in bridge.outcome["reason"]
+    assert bridge._hangup_pending is True
+    bridge.openai_ws.send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_duration_timeout_respects_existing_outcome() -> None:
+    from unittest.mock import patch as mock_patch
+
+    import websockets.protocol
+
+    bridge = _make_bridge()
+    bridge.outcome = {"status": "achieved", "reason": "Already done."}
+    bridge.openai_ws = MagicMock()
+    bridge.openai_ws.send = AsyncMock()
+    bridge.openai_ws.state = websockets.protocol.State.OPEN
+
+    with mock_patch("app.core.config.settings.MAX_CALL_DURATION_SECONDS", 0):
+        await bridge._handle_duration_timeout()
+
+    assert bridge.outcome["status"] == "achieved"
+    bridge.openai_ws.send.assert_not_called()
+
+
+def test_cancel_duration_timer_is_safe_when_no_timer() -> None:
+    bridge = _make_bridge()
+    bridge._cancel_duration_timer()
+    assert bridge._duration_timer is None

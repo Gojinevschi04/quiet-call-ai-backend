@@ -8,6 +8,12 @@ GREETING_EXAMPLES = {
     "ro": "Bună ziua, mă numesc {name}. Sun pentru a ",
 }
 
+AI_DISCLOSURE_PHRASES = {
+    "en": "Hi, this is an automated assistant calling on behalf of {name}.",
+    "ru": "Здравствуйте, это автоматический помощник, звонящий от имени {name}.",
+    "ro": "Bună ziua, sunt un asistent automat care sună din partea lui {name}.",
+}
+
 
 class PromptBuilder:
     @staticmethod
@@ -16,6 +22,7 @@ class PromptBuilder:
         slot_data: dict[str, str],
         language: str = "en",
         use_function_tool: bool = False,
+        require_ai_disclosure: bool = True,
     ) -> str:
         lang_name = LANG_NAMES.get(language, "English")
         caller_name = (
@@ -28,6 +35,9 @@ class PromptBuilder:
             or DEFAULT_CALLER_NAME
         )
         greeting_stub = GREETING_EXAMPLES.get(language, GREETING_EXAMPLES["en"]).format(name=caller_name)
+        disclosure_phrase = AI_DISCLOSURE_PHRASES.get(
+            language, AI_DISCLOSURE_PHRASES["en"],
+        ).format(name=caller_name)
 
         prompt = (
             f"Your name is {caller_name}. You are making an OUTBOUND phone call.\n"
@@ -38,18 +48,34 @@ class PromptBuilder:
             f"YOUR OBJECTIVE (internal — do NOT read this aloud): {base_script}\n\n"
         )
 
+        if require_ai_disclosure:
+            prompt += (
+                "AI DISCLOSURE (legally required):\n"
+                "  - Your VERY FIRST sentence MUST disclose that you are an automated assistant.\n"
+                f"  - Example: \"{disclosure_phrase}\"\n"
+                "  - If the other party explicitly asks \"Am I speaking to a human or a bot?\" "
+                "or similar, answer truthfully that you are an automated assistant.\n\n"
+            )
+
         if slot_data:
             prompt += "DETAILS FOR THIS CALL (use EXACT values):\n"
             for key, value in slot_data.items():
                 prompt += f"  - {key.replace('_', ' ').title()}: {value}\n"
             prompt += "\n"
 
+        opening_suffix = (
+            f"  Example opening: \"{disclosure_phrase} I'm calling to ...\" "
+            "(continue with the specific reason)."
+            if require_ai_disclosure
+            else f"  Example opening: \"{greeting_stub}...\" (continue with the specific reason)."
+        )
         prompt += (
             "OPENING — your VERY FIRST sentence MUST:\n"
-            f"  1. Start with a natural greeting in {lang_name}.\n"
+            f"  1. Start with a natural greeting in {lang_name}"
+            + (" and the AI disclosure above" if require_ai_disclosure else "") + ".\n"
             f"  2. State your name: \"{caller_name}\".\n"
             "  3. State the SPECIFIC reason for calling using the details above (date, service, etc).\n"
-            f"  Example opening: \"{greeting_stub}...\" (continue with the specific reason).\n\n"
+            f"{opening_suffix}\n\n"
             "NEVER:\n"
             "  - Ask \"how can I help you\" or \"what can I do for you\" — you are NOT answering a call.\n"
             "  - Talk about \"your upcoming event\" or other vague content — use the specific details above.\n"
@@ -93,8 +119,10 @@ class PromptBuilder:
         else:
             prompt += (
                 "WHEN TO END:\n"
-                "  - When the objective is achieved, include [OBJECTIVE_ACHIEVED] in your final message.\n"
-                "  - When the objective clearly cannot be achieved, include [OBJECTIVE_FAILED].\n"
+                "  - When the objective is achieved, include "
+                "[OBJECTIVE_ACHIEVED] in your final message.\n"
+                "  - When the objective clearly cannot be achieved, "
+                "include [OBJECTIVE_FAILED].\n"
             )
 
         prompt += "\nSTYLE: Keep replies to 1-2 short sentences — this is a phone conversation."

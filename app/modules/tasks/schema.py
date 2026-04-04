@@ -46,8 +46,16 @@ class TaskBase(BaseModel):
     @field_validator("scheduled_time")
     @classmethod
     def validate_scheduled_time(cls, v: datetime | None) -> datetime | None:
-        if v is not None and v <= datetime.now():
+        if v is None:
+            return v
+        if v <= datetime.now():
             raise ValueError("Scheduled time must be in the future")
+        from app.core.config import settings
+        if not (settings.CALL_WINDOW_START_HOUR <= v.hour < settings.CALL_WINDOW_END_HOUR):
+            raise ValueError(
+                f"Scheduled time must be within call hours "
+                f"({settings.CALL_WINDOW_START_HOUR:02d}:00-{settings.CALL_WINDOW_END_HOUR:02d}:00)"
+            )
         return v
 
 
@@ -88,6 +96,21 @@ class TaskEditRequest(BaseModel):
                     raise ValueError(f"Slot key '{key[:20]}...' exceeds {MAX_SLOT_KEY_LENGTH} characters")
                 if len(value) > MAX_SLOT_VALUE_LENGTH:
                     raise ValueError(f"Slot value for '{key}' exceeds {MAX_SLOT_VALUE_LENGTH} characters")
+        return v
+
+    @field_validator("scheduled_time")
+    @classmethod
+    def validate_scheduled_time(cls, v: datetime | None) -> datetime | None:
+        if v is None:
+            return v
+        if v <= datetime.now():
+            raise ValueError("Scheduled time must be in the future")
+        from app.core.config import settings
+        if not (settings.CALL_WINDOW_START_HOUR <= v.hour < settings.CALL_WINDOW_END_HOUR):
+            raise ValueError(
+                f"Scheduled time must be within call hours "
+                f"({settings.CALL_WINDOW_START_HOUR:02d}:00-{settings.CALL_WINDOW_END_HOUR:02d}:00)"
+            )
         return v
 
 

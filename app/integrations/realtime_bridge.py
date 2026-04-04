@@ -47,6 +47,12 @@ RETRY_LATER_PHRASES = {
     "ro": "Se pare că nu vă aud bine. Voi încerca să revin mai târziu. La revedere.",
 }
 
+MAX_DURATION_FAREWELL_PHRASES = {
+    "en": "I'm sorry, we're running long and I have to end this call. I'll follow up soon. Goodbye.",
+    "ru": "Извините, разговор затянулся, я должен его завершить. Свяжусь с вами позже. До свидания.",
+    "ro": "Îmi pare rău, discuția durează prea mult și trebuie să închei apelul. Voi reveni în curând. La revedere.",
+}
+
 REPORT_OUTCOME_TOOL = {
     "type": "function",
     "name": "report_outcome",
@@ -104,6 +110,8 @@ class RealtimeBridge:
         self._idle_timer: asyncio.Task | None = None
         self._silence_nudges: int = 0
 
+        self._duration_timer: asyncio.Task | None = None
+
     async def run(self) -> None:
         logger.info("[task=%d] RealtimeBridge starting (lang=%s)", self.task_id, self.language)
         try:
@@ -114,6 +122,7 @@ class RealtimeBridge:
                 self.openai_ws = openai_ws
                 logger.info("[task=%d] OpenAI WS connected", self.task_id)
                 await self._init_openai_session()
+                self._start_duration_timer()
 
                 twilio_task = asyncio.create_task(self._twilio_to_openai())
                 openai_task = asyncio.create_task(self._openai_to_twilio())
@@ -136,6 +145,7 @@ class RealtimeBridge:
             logger.exception("[task=%d] RealtimeBridge failed", self.task_id)
         finally:
             self._cancel_idle_timer()
+            self._cancel_duration_timer()
             logger.info(
                 "[task=%d] Bridge finished. Twilio chunks in=%d, OpenAI audio out=%d, transcript lines=%d, outcome=%s",
                 self.task_id, self._twilio_chunks_received, self._openai_chunks_sent,
@@ -469,6 +479,56 @@ class RealtimeBridge:
                     f"Speak ONLY in {lang_name}. The other person hasn't replied. "
                     f"Say exactly this in {lang_name}: \"{nudge_phrase}\" "
                     "Do NOT repeat your original question or introduction."
+                ),
+            },
+        }))
+
+    def _start_duration_timer(self) -> None:
+        self._cancel_duration_timer()
+        self._duration_timer = asyncio.create_task(self._handle_duration_timeout())
+
+    def _cancel_duration_timer(self) -> None:
+        if self._duration_timer and not self._duration_timer.done():
+            self._duration_timer.cancel()
+        self._duration_timer = None
+
+    async def _handle_duration_timeout(self) -> None:
+        """Triggered when the call has been active for MAX_CALL_DURATION_SECONDS.
+
+        Sets a failed outcome, cancels any pending idle timer, and triggers a
+        farewell response — the existing hangup-after-audio-done flow takes it from there.
+        """
+        try:
+            await asyncio.sleep(settings.MAX_CALL_DURATION_SECONDS)
+        except asyncio.CancelledError:
+            return
+
+        if not self.openai_ws or self.openai_ws.state != websockets.protocol.State.OPEN:
+            return
+        if self._hangup_pending or self.outcome is not None:
+            return
+
+        logger.warning(
+            "[task=%d] Max call duration %ds reached — forcing graceful hangup",
+            self.task_id, settings.MAX_CALL_DURATION_SECONDS,
+        )
+        self._cancel_idle_timer()
+        self.outcome = {
+            "status": "failed",
+            "reason": f"Max call duration exceeded ({settings.MAX_CALL_DURATION_SECONDS}s)",
+        }
+        self._hangup_pending = True
+
+        lang_name = LANG_DISPLAY_NAMES.get(self.language, "English")
+        farewell = MAX_DURATION_FAREWELL_PHRASES.get(
+            self.language, MAX_DURATION_FAREWELL_PHRASES["en"],
+        )
+        await self.openai_ws.send(json.dumps({
+            "type": "response.create",
+            "response": {
+                "instructions": (
+                    f"Speak ONLY in {lang_name}. Say exactly this (translate naturally if needed): "
+                    f"\"{farewell}\""
                 ),
             },
         }))

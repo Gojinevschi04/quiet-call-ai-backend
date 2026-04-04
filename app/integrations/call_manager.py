@@ -206,7 +206,11 @@ class CallManager:
         raise RuntimeError("Call was not answered within timeout")
 
     def _build_system_prompt(self, base_script: str, slot_data: dict[str, str], language: str = "en") -> str:
-        return PromptBuilder.build_system_prompt(base_script, slot_data, language)
+        from app.core.config import settings
+        return PromptBuilder.build_system_prompt(
+            base_script, slot_data, language,
+            require_ai_disclosure=settings.AI_DISCLOSURE_REQUIRED,
+        )
 
     async def _generate_summary(self, conv: ConversationManager, language: str = "en") -> str:
         return await self._llm.generate_response(

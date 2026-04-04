@@ -96,3 +96,44 @@ def test_build_summary_prompt_for_each_language() -> None:
 def test_build_summary_prompt_unknown_language_defaults_to_english() -> None:
     summary_prompt = PromptBuilder.build_summary_prompt("de")
     assert "English" in summary_prompt
+
+
+def test_build_system_prompt_includes_ai_disclosure_when_required() -> None:
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Book an appointment.",
+        slot_data={"patient_name": "Eva"},
+        language="en",
+        require_ai_disclosure=True,
+    )
+    assert "AI DISCLOSURE" in prompt
+    assert "automated assistant" in prompt
+    assert "Eva" in prompt
+
+
+def test_build_system_prompt_skips_ai_disclosure_when_disabled() -> None:
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Book an appointment.",
+        slot_data={"patient_name": "Eva"},
+        language="en",
+        require_ai_disclosure=False,
+    )
+    assert "AI DISCLOSURE" not in prompt
+    assert "automated assistant" not in prompt
+
+
+def test_build_system_prompt_disclosure_adapts_to_language() -> None:
+    prompt_ro = PromptBuilder.build_system_prompt(
+        base_script="Fă o programare.",
+        slot_data={"patient_name": "Eva"},
+        language="ro",
+        require_ai_disclosure=True,
+    )
+    assert "asistent automat" in prompt_ro
+
+    prompt_ru = PromptBuilder.build_system_prompt(
+        base_script="Запишитесь на приём.",
+        slot_data={"patient_name": "Eva"},
+        language="ru",
+        require_ai_disclosure=True,
+    )
+    assert "автоматический помощник" in prompt_ru

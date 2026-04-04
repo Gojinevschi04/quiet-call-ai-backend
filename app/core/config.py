@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     REALTIME_VAD_EAGERNESS: str = "medium"
 
     MAX_CONCURRENT_CALLS: int = 10
+    AI_DISCLOSURE_REQUIRED: bool = True
+    MAX_CALL_DURATION_SECONDS: int = 300
+    CALL_WINDOW_START_HOUR: int = 9
+    CALL_WINDOW_END_HOUR: int = 20
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).parent.parent.parent / ".env",

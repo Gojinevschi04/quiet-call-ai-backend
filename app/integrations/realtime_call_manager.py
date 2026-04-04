@@ -81,6 +81,7 @@ class RealtimeCallManager:
             task.slot_data,
             language,
             use_function_tool=True,
+            require_ai_disclosure=settings.AI_DISCLOSURE_REQUIRED,
         )
 
         media_stream_ws_url = self._compute_ws_url()
