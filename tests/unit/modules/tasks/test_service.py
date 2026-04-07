@@ -22,6 +22,7 @@ from app.modules.templates.repository import TemplateRepository
 async def test_create_task_success(mock_task: Task, mock_template: DialogTemplate) -> None:
     mock_task_repo = MagicMock(spec=TaskRepository)
     mock_task_repo.create = AsyncMock(return_value=mock_task)
+    mock_task_repo.count_by_phone_in_last_24h = AsyncMock(return_value=0)
     mock_template_repo = MagicMock(spec=TemplateRepository)
     mock_template_repo.get_by_id = AsyncMock(return_value=mock_template)
 
@@ -147,6 +148,7 @@ async def test_create_task_with_scheduled_time(mock_template: DialogTemplate) ->
     )
     mock_task_repo = MagicMock(spec=TaskRepository)
     mock_task_repo.create = AsyncMock(return_value=scheduled_task)
+    mock_task_repo.count_by_phone_in_last_24h = AsyncMock(return_value=0)
     mock_template_repo = MagicMock(spec=TemplateRepository)
     mock_template_repo.get_by_id = AsyncMock(return_value=mock_template)
 
@@ -536,3 +538,45 @@ async def test_retry_task_admin_uses_any_user_lookup(mock_task: Task) -> None:
 
     mock_task_repo.get_by_id_any_user.assert_awaited_once_with(1)
     mock_task_repo.get_by_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_task_rejected_when_phone_rate_limit_exceeded(mock_template: DialogTemplate) -> None:
+    from app.modules.tasks.exceptions import PhoneRateLimitExceededError
+
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.count_by_phone_in_last_24h = AsyncMock(return_value=3)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+    mock_template_repo.get_by_id = AsyncMock(return_value=mock_template)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+    data = TaskCreate(
+        target_phone="+37312345678",
+        template_id=1,
+        slot_data={"preferred_date": "2026-03-20", "preferred_time": "10:00"},
+    )
+
+    with patch("app.core.config.settings.MAX_CALLS_PER_PHONE_PER_DAY", 3), \
+         pytest.raises(PhoneRateLimitExceededError, match="3 calls"):
+        await service.create_task(data, user_id=1)
+
+
+@pytest.mark.asyncio
+async def test_create_task_allowed_below_rate_limit(mock_task: Task, mock_template: DialogTemplate) -> None:
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.create = AsyncMock(return_value=mock_task)
+    mock_task_repo.count_by_phone_in_last_24h = AsyncMock(return_value=2)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+    mock_template_repo.get_by_id = AsyncMock(return_value=mock_template)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+    data = TaskCreate(
+        target_phone="+37312345678",
+        template_id=1,
+        slot_data={"preferred_date": "2026-03-20", "preferred_time": "10:00"},
+    )
+
+    with patch("app.core.config.settings.MAX_CALLS_PER_PHONE_PER_DAY", 3):
+        result = await service.create_task(data, user_id=1)
+
+    assert result is mock_task

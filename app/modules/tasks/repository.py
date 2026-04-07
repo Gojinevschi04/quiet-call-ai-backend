@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 
 from sqlmodel import func, select
 
@@ -93,4 +94,14 @@ class TaskRepository(Repository):
 
     async def count_total(self) -> int:
         result = await self._session.exec(select(func.count()).select_from(Task))
+        return result.one()
+
+    async def count_by_phone_in_last_24h(self, target_phone: str) -> int:
+        """Count tasks created for a given phone number in the last 24 hours."""
+        cutoff = datetime.now() - timedelta(hours=24)
+        result = await self._session.exec(
+            select(func.count())
+            .select_from(Task)
+            .where(Task.target_phone == target_phone, Task.created_at >= cutoff)
+        )
         return result.one()

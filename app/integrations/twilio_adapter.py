@@ -93,6 +93,7 @@ class TwilioAdapter(IVoiceProvider):
                     from_=self._from_phone,
                     twiml=twiml,
                     record=True,
+                    recording_channels="dual",
                     status_callback=status_callback_url,
                     status_callback_event=["initiated", "ringing", "answered", "completed"],
                     recording_status_callback=recording_callback_url,

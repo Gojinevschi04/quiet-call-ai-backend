@@ -15,6 +15,7 @@ from app.integrations.realtime_call_manager import RealtimeCallManager
 from app.modules.notifications.email_service import EmailService
 from app.modules.tasks.exceptions import (
     InvalidTaskDataError,
+    PhoneRateLimitExceededError,
     TaskNotCancellableError,
     TaskNotEditableError,
     TaskNotFoundError,
@@ -69,6 +70,8 @@ async def create_task_view(
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
     except InvalidTaskDataError as e:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e
+    except PhoneRateLimitExceededError as e:
+        raise HTTPException(status_code=HTTPStatus.TOO_MANY_REQUESTS, detail=str(e)) from e
 
     if task.scheduled_time:
         template = await template_repository.get_by_id(data.template_id)

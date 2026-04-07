@@ -3,9 +3,11 @@ from typing import Annotated
 
 from fastapi import Depends
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.modules.tasks.exceptions import (
     InvalidTaskDataError,
+    PhoneRateLimitExceededError,
     TaskNotCancellableError,
     TaskNotEditableError,
     TaskNotFoundError,
@@ -36,6 +38,13 @@ class TaskService:
         missing_slots = [slot for slot in template.required_slots if slot not in data.slot_data]
         if missing_slots:
             raise InvalidTaskDataError(f"Missing required slots: {', '.join(missing_slots)}")
+
+        recent_count = await self.task_repository.count_by_phone_in_last_24h(data.target_phone)
+        if recent_count >= settings.MAX_CALLS_PER_PHONE_PER_DAY:
+            raise PhoneRateLimitExceededError(
+                f"Phone {data.target_phone} already has {recent_count} calls in the last 24 hours "
+                f"(limit: {settings.MAX_CALLS_PER_PHONE_PER_DAY}). Try again tomorrow."
+            )
 
         status = TaskStatus.SCHEDULED if data.scheduled_time else TaskStatus.PENDING
 

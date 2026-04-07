@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     MAX_CALL_DURATION_SECONDS: int = 300
     CALL_WINDOW_START_HOUR: int = 9
     CALL_WINDOW_END_HOUR: int = 20
+    MAX_CALLS_PER_PHONE_PER_DAY: int = 3
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).parent.parent.parent / ".env",
