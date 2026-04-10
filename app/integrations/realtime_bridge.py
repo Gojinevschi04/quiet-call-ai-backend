@@ -112,8 +112,11 @@ class RealtimeBridge:
 
         self._duration_timer: asyncio.Task | None = None
 
+        self.init_failed: bool = False
+
     async def run(self) -> None:
         logger.info("[task=%d] RealtimeBridge starting (lang=%s)", self.task_id, self.language)
+        session_initialized = False
         try:
             openai_url = OPENAI_REALTIME_URL.format(model=settings.OPENAI_REALTIME_MODEL)
             headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
@@ -122,6 +125,7 @@ class RealtimeBridge:
                 self.openai_ws = openai_ws
                 logger.info("[task=%d] OpenAI WS connected", self.task_id)
                 await self._init_openai_session()
+                session_initialized = True
                 self._start_duration_timer()
 
                 twilio_task = asyncio.create_task(self._twilio_to_openai())
@@ -141,8 +145,12 @@ class RealtimeBridge:
             close_reason = getattr(websocket_closed_error, "reason", "?")
             logger.info("[task=%d] OpenAI WS closed: code=%s reason=%s",
                         self.task_id, close_code, close_reason)
+            if not session_initialized:
+                self.init_failed = True
         except Exception:
             logger.exception("[task=%d] RealtimeBridge failed", self.task_id)
+            if not session_initialized:
+                self.init_failed = True
         finally:
             self._cancel_idle_timer()
             self._cancel_duration_timer()

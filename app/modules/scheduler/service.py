@@ -12,7 +12,9 @@ from app.modules.tasks.schema import TaskStatus
 logger = get_logger(__name__)
 
 POLL_INTERVAL_SECONDS = 30
-RETRYABLE_ERROR_KEYWORDS = ["connection", "timeout", "network", "refused", "retries"]
+RETRYABLE_ERROR_KEYWORDS = [
+    "connection", "timeout", "network", "refused", "retries", "realtime_init_failed",
+]
 MAX_IN_PROGRESS_MINUTES = 10
 
 MAX_RETRY_ATTEMPTS = 4

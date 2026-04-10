@@ -76,12 +76,14 @@ class RealtimeCallManager:
         await self.call_session_repository.create(call_session)
         logger.info("[task=%d] CallSession created", task.id)
 
+        prior_context = await self._build_prior_attempt_context(task.id)
         system_prompt = PromptBuilder.build_system_prompt(
             template.base_script,
             task.slot_data,
             language,
             use_function_tool=True,
             require_ai_disclosure=settings.AI_DISCLOSURE_REQUIRED,
+            prior_attempt_context=prior_context,
         )
 
         media_stream_ws_url = self._compute_ws_url()
@@ -163,3 +165,22 @@ class RealtimeCallManager:
     async def _emit(self, task_id: int, event: str, data: dict | None = None) -> None:
         if call_broadcaster.has_listeners(task_id):
             await call_broadcaster.emit(task_id, event, data)
+
+    async def _build_prior_attempt_context(self, task_id: int) -> str | None:
+        """Fetch the previous call's transcript for this task (if any) so the AI can resume.
+
+        Returns a short formatted string of 'Speaker: text' lines, or None if no prior attempt.
+        """
+        call_session = await self.call_session_repository.get_by_task_id(task_id)
+        if not call_session:
+            return None
+        log_lines = await self.log_line_repository.get_by_session_id(call_session.id)
+        if not log_lines:
+            return None
+
+        from app.modules.calls.schema import Speaker
+        formatted_lines = []
+        for line in log_lines:
+            speaker_label = "Agent" if line.speaker == Speaker.AGENT else "Interlocutor"
+            formatted_lines.append(f"{speaker_label}: {line.text}")
+        return "\n".join(formatted_lines[-20:])

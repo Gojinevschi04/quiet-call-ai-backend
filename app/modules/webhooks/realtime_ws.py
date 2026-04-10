@@ -186,6 +186,9 @@ async def _finalize_call(bridge: RealtimeBridge) -> None:
             task.status = TaskStatus.FAILED
             task.error_reason = task.error_reason or "Call ended without outcome"
 
+        if bridge.init_failed:
+            task.error_reason = f"[REALTIME_INIT_FAILED] {task.error_reason or 'OpenAI Realtime connection failed'}"
+
         task.summary = await _generate_llm_summary(bridge.transcript_buffer, bridge.language)
         await task_repo.update(task)
 

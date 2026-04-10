@@ -125,6 +125,8 @@ class TaskResponse(BaseModel):
     scheduled_time: datetime | None
     summary: str | None
     error_reason: str | None
+    retry_count: int = 0
+    next_retry_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

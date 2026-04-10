@@ -419,6 +419,34 @@ async def test_finalize_call_no_outcome_and_classification_fails_marks_failed() 
 
 
 @pytest.mark.asyncio
+async def test_finalize_call_tags_error_reason_when_bridge_init_failed() -> None:
+    task = Task(
+        id=42, target_phone="+37360000001", status=TaskStatus.IN_PROGRESS,
+        template_id=5, user_id=7, slot_data={},
+    )
+    template = DialogTemplate(
+        id=5, name="T", base_script="x", required_slots=[], language="en", is_active=True,
+    )
+    call_session = CallSession(id=1, task_id=42, start_time=datetime.now())
+    mocks = _build_finalize_mocks(task, template, call_session)
+    bridge = _make_bridge_with_transcript(outcome=None)
+    bridge.init_failed = True
+
+    contexts = _patch_finalize_dependencies(mocks)
+    try:
+        with patch("app.modules.webhooks.realtime_ws._classify_outcome_from_transcript",
+                   AsyncMock(return_value=None)), \
+             patch("app.modules.webhooks.realtime_ws._generate_llm_summary",
+                   AsyncMock(return_value="")):
+            await _finalize_call(bridge)
+    finally:
+        _stop_patches(contexts)
+
+    assert task.status == TaskStatus.FAILED
+    assert task.error_reason.startswith("[REALTIME_INIT_FAILED]")
+
+
+@pytest.mark.asyncio
 async def test_finalize_call_task_missing_returns_early() -> None:
     mocks = _build_finalize_mocks(task=None, template=None, call_session=None)
     bridge = _make_bridge_with_transcript()

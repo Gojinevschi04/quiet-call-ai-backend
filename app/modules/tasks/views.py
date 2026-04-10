@@ -52,6 +52,8 @@ def _task_to_response(task: "Task", template_name: str | None = None) -> TaskRes
         scheduled_time=task.scheduled_time,
         summary=task.summary,
         error_reason=task.error_reason,
+        retry_count=task.retry_count,
+        next_retry_at=task.next_retry_at,
         created_at=task.created_at,
         updated_at=task.updated_at,
     )

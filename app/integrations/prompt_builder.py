@@ -23,6 +23,7 @@ class PromptBuilder:
         language: str = "en",
         use_function_tool: bool = False,
         require_ai_disclosure: bool = True,
+        prior_attempt_context: str | None = None,
     ) -> str:
         lang_name = LANG_NAMES.get(language, "English")
         caller_name = (
@@ -62,6 +63,13 @@ class PromptBuilder:
             for key, value in slot_data.items():
                 prompt += f"  - {key.replace('_', ' ').title()}: {value}\n"
             prompt += "\n"
+
+        if prior_attempt_context:
+            prompt += (
+                "PREVIOUS ATTEMPT TRANSCRIPT (the last call for this task ended without resolution; "
+                "pick up from where it left off — do NOT repeat the full introduction if it was already made):\n"
+                f"{prior_attempt_context}\n\n"
+            )
 
         opening_suffix = (
             f"  Example opening: \"{disclosure_phrase} I'm calling to ...\" "

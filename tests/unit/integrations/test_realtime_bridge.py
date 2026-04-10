@@ -225,3 +225,23 @@ def test_cancel_duration_timer_is_safe_when_no_timer() -> None:
     bridge = _make_bridge()
     bridge._cancel_duration_timer()
     assert bridge._duration_timer is None
+
+
+def test_init_failed_defaults_to_false() -> None:
+    bridge = _make_bridge()
+    assert bridge.init_failed is False
+
+
+@pytest.mark.asyncio
+async def test_run_sets_init_failed_true_when_openai_connect_raises() -> None:
+    from unittest.mock import patch as mock_patch
+
+    bridge = _make_bridge()
+
+    async def _fake_connect(*args, **kwargs) -> None:  # noqa: ARG001
+        raise ConnectionRefusedError("cannot reach OpenAI")
+
+    with mock_patch("app.integrations.realtime_bridge.websockets.connect", side_effect=_fake_connect):
+        await bridge.run()
+
+    assert bridge.init_failed is True

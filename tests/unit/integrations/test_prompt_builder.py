@@ -121,6 +121,27 @@ def test_build_system_prompt_skips_ai_disclosure_when_disabled() -> None:
     assert "automated assistant" not in prompt
 
 
+def test_build_system_prompt_includes_prior_attempt_context_when_provided() -> None:
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Book an appointment.",
+        slot_data={"patient_name": "Eva"},
+        language="en",
+        prior_attempt_context="Agent: Hello.\nInterlocutor: Hold on, I need to find my diary.",
+    )
+    assert "PREVIOUS ATTEMPT TRANSCRIPT" in prompt
+    assert "find my diary" in prompt
+    assert "do NOT repeat the full introduction" in prompt
+
+
+def test_build_system_prompt_omits_prior_context_when_none() -> None:
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Book an appointment.",
+        slot_data={"patient_name": "Eva"},
+        language="en",
+    )
+    assert "PREVIOUS ATTEMPT TRANSCRIPT" not in prompt
+
+
 def test_build_system_prompt_disclosure_adapts_to_language() -> None:
     prompt_ro = PromptBuilder.build_system_prompt(
         base_script="Fă o programare.",

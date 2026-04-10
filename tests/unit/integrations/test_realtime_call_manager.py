@@ -19,8 +19,10 @@ def _make_manager_with_mocks() -> tuple[RealtimeCallManager, MagicMock, MagicMoc
 
     call_session_repo = MagicMock()
     call_session_repo.create = AsyncMock()
+    call_session_repo.get_by_task_id = AsyncMock(return_value=None)
 
     log_line_repo = MagicMock()
+    log_line_repo.get_by_session_id = AsyncMock(return_value=[])
     user_repo = MagicMock()
 
     manager = RealtimeCallManager(
