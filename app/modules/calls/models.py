@@ -14,6 +14,10 @@ class CallSession(BaseModel, table=True):
     duration: int | None = Field(default=None, nullable=True)
     recording_uri: str | None = Field(default=None, nullable=True)
     local_recording_path: str | None = Field(default=None, nullable=True)
+    input_audio_tokens: int = Field(default=0, nullable=False)
+    output_audio_tokens: int = Field(default=0, nullable=False)
+    input_text_tokens: int = Field(default=0, nullable=False)
+    output_text_tokens: int = Field(default=0, nullable=False)
 
 
 class LogLine(BaseModel, table=True):

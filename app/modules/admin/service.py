@@ -92,11 +92,34 @@ class AdminService:
         )
         users_per_month = [{"date": str(month.date()), "count": count} for month, count in result.all()]
 
+        # Success rate per template — only templates with at least one terminal task count.
+        result = await session.exec(
+            select(
+                DialogTemplate.name,
+                func.count(Task.id),
+                func.count(Task.id).filter(Task.status == TaskStatus.COMPLETED),
+            )
+            .join(Task, Task.template_id == DialogTemplate.id)
+            .where(Task.status.in_([TaskStatus.COMPLETED, TaskStatus.FAILED]))
+            .group_by(DialogTemplate.name)
+            .order_by(func.count(Task.id).desc())
+        )
+        success_rate_per_template = [
+            {
+                "name": name,
+                "total": total,
+                "completed": completed,
+                "success_rate": round((completed / total) * 100, 1) if total else 0.0,
+            }
+            for name, total, completed in result.all()
+        ]
+
         return {
             "tasks_per_template": tasks_per_template,
             "average_call_duration": average_duration,
             "tasks_per_day": tasks_per_day,
             "users_per_month": users_per_month,
+            "success_rate_per_template": success_rate_per_template,
         }
 
     async def get_all_users(self, limit: int = 50, offset: int = 0) -> tuple[Sequence[User], int]:

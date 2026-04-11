@@ -363,12 +363,19 @@ async def test_get_extended_stats_assembles_all_four_sections() -> None:
     users_per_month_result = MagicMock()
     users_per_month_result.all.return_value = [(month_one, 4)]
 
+    success_rate_result = MagicMock()
+    success_rate_result.all.return_value = [
+        ("Make appointment", 10, 8),
+        ("Confirm reservation", 5, 5),
+    ]
+
     mock_session = AsyncMock()
     mock_session.exec = AsyncMock(side_effect=[
         template_result,
         duration_result,
         tasks_per_day_result,
         users_per_month_result,
+        success_rate_result,
     ])
 
     mock_user_repo = MagicMock(spec=UserRepository)
@@ -387,6 +394,10 @@ async def test_get_extended_stats_assembles_all_four_sections() -> None:
         {"date": "2026-04-02", "count": 5},
     ]
     assert stats["users_per_month"] == [{"date": "2026-01-01", "count": 4}]
+    assert stats["success_rate_per_template"] == [
+        {"name": "Make appointment", "total": 10, "completed": 8, "success_rate": 80.0},
+        {"name": "Confirm reservation", "total": 5, "completed": 5, "success_rate": 100.0},
+    ]
 
 
 @pytest.mark.asyncio
@@ -403,6 +414,7 @@ async def test_get_extended_stats_average_duration_is_zero_when_no_calls() -> No
         duration_result,
         empty_result,
         empty_result,
+        empty_result,
     ])
 
     mock_user_repo = MagicMock(spec=UserRepository)
@@ -415,3 +427,4 @@ async def test_get_extended_stats_average_duration_is_zero_when_no_calls() -> No
     assert stats["tasks_per_template"] == []
     assert stats["tasks_per_day"] == []
     assert stats["users_per_month"] == []
+    assert stats["success_rate_per_template"] == []

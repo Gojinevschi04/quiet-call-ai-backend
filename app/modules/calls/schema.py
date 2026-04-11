@@ -15,6 +15,10 @@ class CallSessionResponse(BaseModel):
     start_time: datetime
     duration: int | None
     recording_uri: str | None
+    input_audio_tokens: int = 0
+    output_audio_tokens: int = 0
+    input_text_tokens: int = 0
+    output_text_tokens: int = 0
     created_at: datetime
     updated_at: datetime
 

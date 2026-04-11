@@ -164,6 +164,10 @@ async def _finalize_call(bridge: RealtimeBridge) -> None:
                     call_session.recording_uri = await TwilioAdapter().get_recording_url(bridge.call_sid)
                 except Exception:
                     logger.exception("Failed to fetch recording URL for task %d", bridge.task_id)
+            call_session.input_audio_tokens = bridge.input_audio_tokens
+            call_session.output_audio_tokens = bridge.output_audio_tokens
+            call_session.input_text_tokens = bridge.input_text_tokens
+            call_session.output_text_tokens = bridge.output_text_tokens
             await call_session_repo.update(call_session)
 
         outcome = bridge.outcome

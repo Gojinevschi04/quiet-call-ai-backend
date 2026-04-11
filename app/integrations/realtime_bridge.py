@@ -114,6 +114,11 @@ class RealtimeBridge:
 
         self.init_failed: bool = False
 
+        self.input_audio_tokens: int = 0
+        self.output_audio_tokens: int = 0
+        self.input_text_tokens: int = 0
+        self.output_text_tokens: int = 0
+
     async def run(self) -> None:
         logger.info("[task=%d] RealtimeBridge starting (lang=%s)", self.task_id, self.language)
         session_initialized = False
@@ -155,9 +160,13 @@ class RealtimeBridge:
             self._cancel_idle_timer()
             self._cancel_duration_timer()
             logger.info(
-                "[task=%d] Bridge finished. Twilio chunks in=%d, OpenAI audio out=%d, transcript lines=%d, outcome=%s",
+                "[task=%d] Bridge finished. Twilio chunks in=%d, OpenAI audio out=%d, "
+                "transcript lines=%d, outcome=%s, tokens: "
+                "in(audio=%d text=%d) out(audio=%d text=%d)",
                 self.task_id, self._twilio_chunks_received, self._openai_chunks_sent,
                 len(self.transcript_buffer), self.outcome,
+                self.input_audio_tokens, self.input_text_tokens,
+                self.output_audio_tokens, self.output_text_tokens,
             )
 
     async def _init_openai_session(self) -> None:
@@ -326,8 +335,10 @@ class RealtimeBridge:
                     logger.info("[task=%d] OpenAI session.updated (config applied)", self.task_id)
 
                 elif event_type == "response.done":
-                    response_status = event.get("response", {}).get("status")
+                    response_payload = event.get("response", {})
+                    response_status = response_payload.get("status")
                     logger.debug("[task=%d] response.done status=%s", self.task_id, response_status)
+                    self._accumulate_token_usage(response_payload.get("usage") or {})
 
                 elif event_type == "response.output_audio.done":
                     if self._hangup_pending:
@@ -557,6 +568,22 @@ class RealtimeBridge:
             logger.info("[task=%d] Twilio call hung up after farewell", self.task_id)
         except Exception:
             logger.exception("[task=%d] Failed to hang up Twilio call", self.task_id)
+
+    def _accumulate_token_usage(self, usage: dict[str, Any]) -> None:
+        """Add usage from one response.done event to the running totals.
+
+        OpenAI Realtime usage shape:
+          usage.input_token_details.{audio_tokens, text_tokens, cached_tokens}
+          usage.output_token_details.{audio_tokens, text_tokens}
+        """
+        if not usage:
+            return
+        input_details = usage.get("input_token_details") or {}
+        output_details = usage.get("output_token_details") or {}
+        self.input_audio_tokens += int(input_details.get("audio_tokens") or 0)
+        self.input_text_tokens += int(input_details.get("text_tokens") or 0)
+        self.output_audio_tokens += int(output_details.get("audio_tokens") or 0)
+        self.output_text_tokens += int(output_details.get("text_tokens") or 0)
 
     def _record_transcript(self, speaker: Speaker, text: str) -> None:
         self.transcript_buffer.append({

@@ -296,7 +296,10 @@ async def test_get_call_session_response_shape(authenticated_client: AsyncClient
         data = response.json()
         assert set(data.keys()) == {
             "id", "task_id", "start_time", "duration",
-            "recording_uri", "created_at", "updated_at",
+            "recording_uri",
+            "input_audio_tokens", "output_audio_tokens",
+            "input_text_tokens", "output_text_tokens",
+            "created_at", "updated_at",
         }
 
 

@@ -232,6 +232,34 @@ def test_init_failed_defaults_to_false() -> None:
     assert bridge.init_failed is False
 
 
+def test_accumulate_token_usage_sums_across_multiple_events() -> None:
+    bridge = _make_bridge()
+
+    bridge._accumulate_token_usage({
+        "input_token_details": {"audio_tokens": 100, "text_tokens": 5},
+        "output_token_details": {"audio_tokens": 200, "text_tokens": 10},
+    })
+    bridge._accumulate_token_usage({
+        "input_token_details": {"audio_tokens": 50, "text_tokens": 2},
+        "output_token_details": {"audio_tokens": 80, "text_tokens": 4},
+    })
+
+    assert bridge.input_audio_tokens == 150
+    assert bridge.input_text_tokens == 7
+    assert bridge.output_audio_tokens == 280
+    assert bridge.output_text_tokens == 14
+
+
+def test_accumulate_token_usage_handles_missing_details_gracefully() -> None:
+    bridge = _make_bridge()
+    bridge._accumulate_token_usage({})
+    bridge._accumulate_token_usage(None)  # type: ignore[arg-type]
+    bridge._accumulate_token_usage({"input_token_details": None, "output_token_details": None})
+
+    assert bridge.input_audio_tokens == 0
+    assert bridge.output_audio_tokens == 0
+
+
 @pytest.mark.asyncio
 async def test_run_sets_init_failed_true_when_openai_connect_raises() -> None:
     from unittest.mock import patch as mock_patch
