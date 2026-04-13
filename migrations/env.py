@@ -16,6 +16,7 @@ if config.config_file_name is not None:
 
 from sqlmodel import SQLModel
 
+import app.modules.audit.models  # noqa: F401
 import app.modules.calls.models  # noqa: F401
 import app.modules.files.models  # noqa: F401
 import app.modules.tasks.models  # noqa: F401

@@ -6,6 +6,7 @@ from app.core.health import router as health_router
 from app.core.middleware import RequestLoggingMiddleware
 from app.core.rate_limit import RateLimitMiddleware
 from app.modules.admin.views import router as admin_router
+from app.modules.audit.views import router as audit_router
 from app.modules.auth.views import router as auth_router
 from app.modules.calls.views import router as calls_router
 from app.modules.calls.ws import router as ws_router
@@ -46,6 +47,7 @@ def get_application() -> FastAPI:
     app.include_router(tasks_router)
     app.include_router(calls_router)
     app.include_router(admin_router)
+    app.include_router(audit_router)
     app.include_router(feedback_router)
     app.include_router(ws_router)
     app.include_router(webhooks_router)
