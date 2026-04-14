@@ -52,6 +52,10 @@ class PostCallProcessor:
         else:
             logger.info("Email notifications disabled for user %d, skipping for task %d", user.id, task.id)
 
+        if user.webhook_url:
+            from app.modules.notifications.webhook_dispatcher import send_task_webhook
+            coroutines.append(send_task_webhook(user.webhook_url, task))
+
         await asyncio.gather(*coroutines)
 
         logger.info("Post-call processing completed for task %d", task.id)

@@ -61,6 +61,7 @@ class UserResponse(BaseModel):
     role: UserRole
     phone_number: str | None = None
     email_notifications: bool = True
+    webhook_url: str | None = None
     created_at: str
     updated_at: str
 
@@ -76,6 +77,7 @@ class ProfileUpdate(BaseModel):
     phone_number: str | None = None
     email: EmailStr | None = None
     email_notifications: bool | None = None
+    webhook_url: str | None = None
 
 
 class ChangePassword(BaseModel):

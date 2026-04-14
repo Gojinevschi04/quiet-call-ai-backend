@@ -33,6 +33,7 @@ class UserService:
             role=user.role,
             phone_number=user.phone_number,
             email_notifications=user.email_notifications,
+            webhook_url=user.webhook_url,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat(),
         )
@@ -108,6 +109,9 @@ class UserService:
 
         if data.email_notifications is not None:
             user.email_notifications = data.email_notifications
+
+        if data.webhook_url is not None:
+            user.webhook_url = data.webhook_url or None
 
         updated_user = await self.user_repository.update(user)
         return self._to_response(updated_user)
