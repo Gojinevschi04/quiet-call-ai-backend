@@ -390,7 +390,7 @@ async def test_edit_task_unauthenticated(client: AsyncClient) -> None:
 async def test_create_scheduled_task_triggers_email_notification(authenticated_client: AsyncClient) -> None:
     from datetime import datetime, timedelta
 
-    future_time = datetime.now() + timedelta(days=3)
+    future_time = (datetime.now() + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
     scheduled_task = MagicMock(retry_count=0, next_retry_at=None, user_rating=None, user_rating_comment=None)
     scheduled_task.id = 1
     scheduled_task.target_phone = "+37312345678"
