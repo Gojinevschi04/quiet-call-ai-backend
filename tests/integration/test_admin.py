@@ -358,3 +358,32 @@ async def test_delete_user_with_tasks(admin_client: AsyncClient) -> None:
         response = await admin_client.delete("/admin/users/1")
         assert response.status_code == 200
         assert response.json()["message"] == "User deleted successfully"
+
+
+@pytest.mark.asyncio
+async def test_get_extended_stats_admin(admin_client: AsyncClient) -> None:
+    with patch("app.modules.admin.service.AdminService.get_extended_stats") as mock_stats:
+        mock_stats.return_value = {
+            "tasks_per_template": [],
+            "average_call_duration": 0,
+            "tasks_per_day": [],
+            "users_per_month": [],
+            "success_rate_per_template": [],
+        }
+        response = await admin_client.get("/admin/stats/extended")
+        assert response.status_code == 200
+        data = response.json()
+        assert "tasks_per_template" in data
+        assert "success_rate_per_template" in data
+
+
+@pytest.mark.asyncio
+async def test_get_extended_stats_requires_admin(authenticated_client: AsyncClient) -> None:
+    response = await authenticated_client.get("/admin/stats/extended")
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_extended_stats_requires_auth(client: AsyncClient) -> None:
+    response = await client.get("/admin/stats/extended")
+    assert response.status_code == 401

@@ -177,3 +177,51 @@ async def test_get_all_paginated_admin_with_status(mock_session: MagicMock, mock
 
     assert len(tasks) == 1
     assert total == 1
+
+
+@pytest.mark.asyncio
+async def test_count_by_phone_in_last_24h(mock_session: MagicMock) -> None:
+    mock_result = MagicMock()
+    mock_result.one.return_value = 2
+    mock_session.exec = AsyncMock(return_value=mock_result)
+
+    repo = TaskRepository(session=mock_session)
+    count = await repo.count_by_phone_in_last_24h("+37312345678")
+
+    assert count == 2
+
+
+@pytest.mark.asyncio
+async def test_count_by_phone_in_last_24h_zero(mock_session: MagicMock) -> None:
+    mock_result = MagicMock()
+    mock_result.one.return_value = 0
+    mock_session.exec = AsyncMock(return_value=mock_result)
+
+    repo = TaskRepository(session=mock_session)
+    count = await repo.count_by_phone_in_last_24h("+37311111111")
+
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_count_by_user_in_last_24h(mock_session: MagicMock) -> None:
+    mock_result = MagicMock()
+    mock_result.one.return_value = 5
+    mock_session.exec = AsyncMock(return_value=mock_result)
+
+    repo = TaskRepository(session=mock_session)
+    count = await repo.count_by_user_in_last_24h(user_id=1)
+
+    assert count == 5
+
+
+@pytest.mark.asyncio
+async def test_count_by_user_in_last_24h_zero(mock_session: MagicMock) -> None:
+    mock_result = MagicMock()
+    mock_result.one.return_value = 0
+    mock_session.exec = AsyncMock(return_value=mock_result)
+
+    repo = TaskRepository(session=mock_session)
+    count = await repo.count_by_user_in_last_24h(user_id=999)
+
+    assert count == 0

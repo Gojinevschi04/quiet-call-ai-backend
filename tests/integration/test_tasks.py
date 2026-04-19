@@ -584,3 +584,132 @@ async def test_run_call_in_background_swallows_exceptions() -> None:
         mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
         await _run_call_in_background(task_id=1, user_id=2, is_admin=False)
+
+
+@pytest.mark.asyncio
+async def test_rate_task_success(authenticated_client: AsyncClient) -> None:
+    task = MagicMock(
+        retry_count=0,
+        next_retry_at=None,
+        user_rating=5,
+        user_rating_comment="Great",
+    )
+    task.id = 1
+    task.target_phone = "+37312345678"
+    task.status = TaskStatus.COMPLETED
+    task.template_id = 1
+    task.slot_data = {}
+    task.scheduled_time = None
+    task.summary = "Done"
+    task.error_reason = None
+    from datetime import datetime
+    task.created_at = datetime(2026, 1, 1)
+    task.updated_at = datetime(2026, 1, 1)
+
+    with patch("app.modules.tasks.service.TaskService.rate_task", new=AsyncMock(return_value=task)):
+        response = await authenticated_client.post("/tasks/1/rate", json={"rating": 5, "comment": "Great"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["user_rating"] == 5
+    assert data["user_rating_comment"] == "Great"
+
+
+@pytest.mark.asyncio
+async def test_rate_task_not_found(authenticated_client: AsyncClient) -> None:
+    from app.modules.tasks.exceptions import TaskNotFoundError as _NotFound
+
+    with patch(
+        "app.modules.tasks.service.TaskService.rate_task",
+        new=AsyncMock(side_effect=_NotFound("not found")),
+    ):
+        response = await authenticated_client.post("/tasks/99999/rate", json={"rating": 5})
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_rate_task_conflict_on_non_completed(authenticated_client: AsyncClient) -> None:
+    with patch(
+        "app.modules.tasks.service.TaskService.rate_task",
+        new=AsyncMock(side_effect=InvalidTaskDataError("not completed")),
+    ):
+        response = await authenticated_client.post("/tasks/1/rate", json={"rating": 5})
+
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_rate_task_validation_error(authenticated_client: AsyncClient) -> None:
+    response = await authenticated_client.post("/tasks/1/rate", json={"rating": 9})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_rate_task_unauthenticated(client: AsyncClient) -> None:
+    response = await client.post("/tasks/1/rate", json={"rating": 5})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_duplicate_task_success(authenticated_client: AsyncClient) -> None:
+    from datetime import datetime
+    source_task = MagicMock(retry_count=0, next_retry_at=None, user_rating=None, user_rating_comment=None)
+    source_task.id = 1
+    source_task.target_phone = "+37312345678"
+    source_task.status = TaskStatus.COMPLETED
+    source_task.template_id = 1
+    source_task.slot_data = {"preferred_date": "2026-05-10"}
+    source_task.scheduled_time = None
+    source_task.summary = "Done"
+    source_task.error_reason = None
+    source_task.created_at = datetime(2026, 1, 1)
+    source_task.updated_at = datetime(2026, 1, 1)
+
+    new_task = MagicMock(retry_count=0, next_retry_at=None, user_rating=None, user_rating_comment=None)
+    new_task.id = 2
+    new_task.target_phone = "+37399999999"
+    new_task.status = TaskStatus.PENDING
+    new_task.template_id = 1
+    new_task.slot_data = {"preferred_date": "2026-05-10"}
+    new_task.scheduled_time = None
+    new_task.summary = None
+    new_task.error_reason = None
+    new_task.created_at = datetime(2026, 1, 1)
+    new_task.updated_at = datetime(2026, 1, 1)
+
+    with patch("app.modules.tasks.service.TaskService.get_task", new=AsyncMock(return_value=source_task)), \
+         patch("app.modules.tasks.service.TaskService.create_task", new=AsyncMock(return_value=new_task)):
+        response = await authenticated_client.post(
+            "/tasks/1/duplicate", json={"target_phone": "+37399999999"},
+        )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["id"] == 2
+    assert data["target_phone"] == "+37399999999"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_task_source_not_found(authenticated_client: AsyncClient) -> None:
+    with patch(
+        "app.modules.tasks.service.TaskService.get_task",
+        new=AsyncMock(side_effect=TaskNotFoundError("not found")),
+    ):
+        response = await authenticated_client.post(
+            "/tasks/99999/duplicate", json={"target_phone": "+37399999999"},
+        )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_duplicate_task_invalid_phone(authenticated_client: AsyncClient) -> None:
+    response = await authenticated_client.post("/tasks/1/duplicate", json={"target_phone": "abc"})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_duplicate_task_unauthenticated(client: AsyncClient) -> None:
+    response = await client.post("/tasks/1/duplicate", json={"target_phone": "+37399999999"})
+    assert response.status_code == 401
