@@ -64,8 +64,8 @@ class FileService:
     async def get_file(self, file_id: int, user_id: int) -> File | None:
         return await self.file_repository.get_by_id(file_id, user_id)
 
-    async def get_files(self) -> Sequence[File]:
-        return await self.file_repository.get_all()
+    async def get_files(self, user_id: int) -> Sequence[File]:
+        return await self.file_repository.get_all_by_user(user_id)
 
     async def delete_file(self, file_id: int, user_id: int) -> bool:
         file_record = await self.file_repository.get_by_id(file_id, user_id)

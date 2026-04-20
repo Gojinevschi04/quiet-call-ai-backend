@@ -37,6 +37,6 @@ class FileRepository(Repository):
         await self._session.commit()
         return True
 
-    async def get_all(self) -> Sequence[File]:
-        result = await self._session.exec(select(File))
+    async def get_all_by_user(self, user_id: int) -> Sequence[File]:
+        result = await self._session.exec(select(File).where(File.user_id == user_id))
         return result.all()

@@ -91,14 +91,30 @@ async def test_get_files(mock_session: MagicMock) -> None:
         )
         for i in range(3)
     ]
-    mock_file_repo.get_all = AsyncMock(return_value=files)
+    mock_file_repo.get_all_by_user = AsyncMock(return_value=files)
 
     with patch("app.modules.files.service.settings") as mock_settings:
         mock_settings.STORAGE_DIR = Path("/tmp")
         service = FileService(file_repository=mock_file_repo, user_repository=mock_user_repo)
-        result = await service.get_files()
+        result = await service.get_files(user_id=1)
 
         assert len(result) == 3
+        mock_file_repo.get_all_by_user.assert_awaited_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_get_files_scoped_to_current_user(mock_session: MagicMock) -> None:
+    """Regression: get_files must filter by user — no cross-user leak."""
+    mock_file_repo = MagicMock(spec=FileRepository)
+    mock_user_repo = MagicMock(spec=UserRepository)
+    mock_file_repo.get_all_by_user = AsyncMock(return_value=[])
+
+    with patch("app.modules.files.service.settings") as mock_settings:
+        mock_settings.STORAGE_DIR = Path("/tmp")
+        service = FileService(file_repository=mock_file_repo, user_repository=mock_user_repo)
+        await service.get_files(user_id=42)
+
+        mock_file_repo.get_all_by_user.assert_awaited_once_with(42)
 
 
 @pytest.mark.asyncio

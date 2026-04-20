@@ -48,10 +48,10 @@ async def upload_file_view(
 @router.get("/")
 async def get_files_view(
     file_service: Annotated[FileService, Depends(FileService)],
-    _current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)],
     request: Request,
 ) -> list[FileResponse]:
-    files = await file_service.get_files()
+    files = await file_service.get_files(current_user.id)
 
     file_list = []
     for file in files:

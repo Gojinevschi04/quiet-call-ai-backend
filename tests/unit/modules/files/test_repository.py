@@ -94,7 +94,7 @@ async def test_delete_not_found(mock_session: MagicMock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_all(mock_session: MagicMock) -> None:
+async def test_get_all_by_user(mock_session: MagicMock) -> None:
     files = [
         File(
             id=i,
@@ -112,7 +112,19 @@ async def test_get_all(mock_session: MagicMock) -> None:
     mock_session.exec.return_value = mock_result
 
     repo = FileRepository(session=mock_session)
-    result = await repo.get_all()
+    result = await repo.get_all_by_user(user_id=1)
 
     assert isinstance(result, Sequence)
     assert len(result) == 3
+
+
+@pytest.mark.asyncio
+async def test_get_all_by_user_empty_for_other_user(mock_session: MagicMock) -> None:
+    mock_result = MagicMock()
+    mock_result.all.return_value = []
+    mock_session.exec.return_value = mock_result
+
+    repo = FileRepository(session=mock_session)
+    result = await repo.get_all_by_user(user_id=999)
+
+    assert len(result) == 0
