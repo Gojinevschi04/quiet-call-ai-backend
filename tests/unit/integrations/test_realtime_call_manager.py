@@ -13,6 +13,7 @@ def _make_manager_with_mocks() -> tuple[RealtimeCallManager, MagicMock, MagicMoc
     task_repo.get_by_id = AsyncMock()
     task_repo.get_by_id_any_user = AsyncMock()
     task_repo.update = AsyncMock()
+    task_repo.claim_for_execution = AsyncMock(return_value=True)
 
     template_repo = MagicMock()
     template_repo.get_by_id = AsyncMock()
@@ -202,3 +203,43 @@ async def test_execute_task_admin_uses_any_user_lookup() -> None:
 
     task_repo.get_by_id_any_user.assert_awaited_once_with(1)
     task_repo.get_by_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_execute_task_claim_races_raises_when_already_claimed() -> None:
+    """Regression: if another worker claimed the task first, execute_task raises."""
+    manager, task_repo, template_repo, _ = _make_manager_with_mocks()
+    mock_task = Task(
+        id=1, target_phone="+37312345678", template_id=1, user_id=1,
+        slot_data={}, status=TaskStatus.PENDING,
+    )
+    template = DialogTemplate(
+        id=1, name="T", base_script="test", required_slots=[], language="en", is_active=True,
+    )
+    task_repo.get_by_id = AsyncMock(return_value=mock_task)
+    template_repo.get_by_id = AsyncMock(return_value=template)
+    task_repo.claim_for_execution = AsyncMock(return_value=False)
+
+    with pytest.raises(ValueError, match="already being executed"):
+        await manager.execute_task(task_id=1, user_id=1)
+
+
+@pytest.mark.asyncio
+async def test_execute_task_calls_claim_for_execution_exactly_once() -> None:
+    """Regression: happy path must invoke the atomic claim, not just .update()."""
+    manager, task_repo, template_repo, _ = _make_manager_with_mocks()
+    mock_task = Task(
+        id=1, target_phone="+37312345678", template_id=1, user_id=1,
+        slot_data={}, status=TaskStatus.PENDING,
+    )
+    template = DialogTemplate(
+        id=1, name="T", base_script="test", required_slots=[], language="en", is_active=True,
+    )
+    task_repo.get_by_id = AsyncMock(return_value=mock_task)
+    template_repo.get_by_id = AsyncMock(return_value=template)
+    task_repo.claim_for_execution = AsyncMock(return_value=True)
+
+    with patch.object(manager._voice, "initiate_call_with_twiml", new=AsyncMock(return_value="CA123")):
+        await manager.execute_task(task_id=1, user_id=1)
+
+    task_repo.claim_for_execution.assert_awaited_once_with(1)

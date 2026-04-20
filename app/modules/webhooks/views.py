@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Form, Response
 
 from app.core.logging import get_logger
+from app.core.ws_manager import call_broadcaster
 from app.integrations.twilio_adapter import set_gather_result
 from app.modules.calls.repository import CallSessionRepository
 from app.modules.tasks.repository import TaskRepository
@@ -97,6 +98,12 @@ async def twilio_status_callback(
             task.status = TaskStatus.FAILED
             task.error_reason = f"Reached voicemail ({AnsweredBy})"
             await task_repository.update(task)
+            if call_broadcaster.has_listeners(task_id):
+                await call_broadcaster.emit(task_id, "call_ended", {
+                    "status": TaskStatus.FAILED,
+                    "error_reason": task.error_reason,
+                    "summary": None,
+                })
 
     if CallStatus == "completed":
         call_session = await call_session_repository.get_by_task_id(task_id)
@@ -115,6 +122,17 @@ async def twilio_status_callback(
         if call_session:
             call_session.duration = 0
             await call_session_repository.update(call_session)
+        task = await task_repository.get_by_id_any_user(task_id)
+        if task and task.status not in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+            task.status = TaskStatus.FAILED
+            task.error_reason = f"Call {CallStatus} (recipient did not pick up)"
+            await task_repository.update(task)
+            if call_broadcaster.has_listeners(task_id):
+                await call_broadcaster.emit(task_id, "call_ended", {
+                    "status": TaskStatus.FAILED,
+                    "error_reason": task.error_reason,
+                    "summary": None,
+                })
 
     return Response(content="<Response/>", media_type="application/xml")
 

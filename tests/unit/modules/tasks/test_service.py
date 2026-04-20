@@ -640,3 +640,54 @@ async def test_rate_task_admin_can_rate_any_user_task(mock_task: Task) -> None:
     assert result is mock_task
     mock_task_repo.get_by_id_any_user.assert_called_once_with(1)
     mock_task_repo.get_by_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_rate_task_failed_status_succeeds(mock_task: Task) -> None:
+    """Non-admin users can rate their own FAILED tasks."""
+    mock_task.status = TaskStatus.FAILED
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id = AsyncMock(return_value=mock_task)
+    mock_task_repo.update = AsyncMock(return_value=mock_task)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+    result = await service.rate_task(task_id=1, user_id=1, rating=3, comment="Didn't pick up")
+
+    assert result is mock_task
+    assert mock_task.user_rating == 3
+    assert mock_task.user_rating_comment == "Didn't pick up"
+
+
+@pytest.mark.asyncio
+async def test_rate_task_without_comment_succeeds(mock_task: Task) -> None:
+    """Rating without a comment (comment=None) should work."""
+    mock_task.status = TaskStatus.COMPLETED
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id = AsyncMock(return_value=mock_task)
+    mock_task_repo.update = AsyncMock(return_value=mock_task)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+    result = await service.rate_task(task_id=1, user_id=1, rating=4, comment=None)
+
+    assert result is mock_task
+    assert mock_task.user_rating == 4
+    assert mock_task.user_rating_comment is None
+
+
+@pytest.mark.asyncio
+async def test_rate_task_other_user_raises_not_found() -> None:
+    """Non-admin rating a task owned by another user must raise TaskNotFoundError
+    (user-scoped get_by_id returns None)."""
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_task_repo.get_by_id = AsyncMock(return_value=None)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+
+    with pytest.raises(TaskNotFoundError):
+        await service.rate_task(task_id=1, user_id=42, rating=5, comment="good")
+
+    mock_task_repo.get_by_id.assert_awaited_once_with(1, 42)
+    mock_task_repo.get_by_id_any_user.assert_not_called()

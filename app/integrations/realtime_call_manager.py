@@ -58,8 +58,10 @@ class RealtimeCallManager:
         if not template:
             raise ValueError(f"Template {task.template_id} not found")
 
+        claimed = await self.task_repository.claim_for_execution(task_id)
+        if not claimed:
+            raise ValueError(f"Task {task_id} is already being executed by another worker")
         task.status = TaskStatus.IN_PROGRESS
-        await self.task_repository.update(task)
 
         language = template.language or DEFAULT_LANGUAGE
         dial_phone = self._resolve_phone(task.target_phone)

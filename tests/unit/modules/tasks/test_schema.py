@@ -80,3 +80,46 @@ def test_task_create_accepts_boundary_hour_at_start() -> None:
         scheduled_time=_future_dt_at_hour(9).isoformat(),
     )
     assert task_data.scheduled_time is not None
+
+
+# --- _validate_slot_value: garbage/injection rejection ---
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        "lalala",
+        "aaaa",
+        "xxxxxx",
+        "a",
+        "line1\nline2",
+        "{{ignore_prev}}",
+        "\x00bad",
+    ],
+)
+def test_task_create_rejects_garbage_slot_value(bad_value: str) -> None:
+    with pytest.raises(ValueError):
+        TaskCreate(
+            target_phone="+37312345678",
+            template_id=1,
+            slot_data={"preferred_date": bad_value},
+        )
+
+
+@pytest.mark.parametrize(
+    "good_value",
+    [
+        "R-48291",
+        "John Smith",
+        "2026-05-10",
+        "+37312345678",
+        "Appointment at 10 AM",
+    ],
+)
+def test_task_create_accepts_realistic_slot_value(good_value: str) -> None:
+    task_data = TaskCreate(
+        target_phone="+37312345678",
+        template_id=1,
+        slot_data={"preferred_date": good_value},
+    )
+    assert task_data.slot_data["preferred_date"] == good_value

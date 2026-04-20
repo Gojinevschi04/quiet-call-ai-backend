@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 
+from sqlalchemy import update as sql_update
 from sqlmodel import func, select
 
 from app.core.repositories import Repository
@@ -51,6 +52,24 @@ class TaskRepository(Repository):
         await self._session.commit()
         await self._session.refresh(task)
         return task
+
+    async def claim_for_execution(self, task_id: int) -> bool:
+        """Atomically transition PENDING/SCHEDULED → IN_PROGRESS.
+
+        Returns True if this caller won the race. Prevents double-execution when
+        two requests (or scheduler + user click) arrive for the same task.
+        """
+        statement = (
+            sql_update(Task)
+            .where(
+                Task.id == task_id,
+                Task.status.in_([TaskStatus.PENDING, TaskStatus.SCHEDULED]),
+            )
+            .values(status=TaskStatus.IN_PROGRESS, updated_at=datetime.now())
+        )
+        result = await self._session.exec(statement)
+        await self._session.commit()
+        return result.rowcount == 1
 
     async def count_by_status(self, user_id: int) -> dict[str, int]:
         result = await self._session.exec(

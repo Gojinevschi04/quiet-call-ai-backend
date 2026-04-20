@@ -21,6 +21,29 @@ MIN_RATING = 1
 MAX_RATING = 5
 MAX_RATING_COMMENT_LENGTH = 1000
 
+MIN_SLOT_VALUE_LENGTH = 2
+MIN_UNIQUE_CHAR_RATIO = 0.4
+LOW_ENTROPY_MIN_LENGTH = 4
+CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _validate_slot_value(key: str, value: str) -> None:
+    """Reject slot values that look like garbage, control chars, or prompt-injection attempts."""
+    if len(value) < MIN_SLOT_VALUE_LENGTH:
+        raise ValueError(f"Slot value for '{key}' is too short (min {MIN_SLOT_VALUE_LENGTH} chars)")
+    if CONTROL_CHAR_PATTERN.search(value) or "\n" in value or "\r" in value:
+        raise ValueError(f"Slot value for '{key}' contains control characters or newlines")
+    if "{{" in value or "}}" in value:
+        raise ValueError(f"Slot value for '{key}' contains template markers")
+    stripped = value.strip()
+    if len(stripped) >= LOW_ENTROPY_MIN_LENGTH:
+        unique_ratio = len(set(stripped.lower())) / len(stripped)
+        if unique_ratio < MIN_UNIQUE_CHAR_RATIO:
+            raise ValueError(
+                f"Slot value for '{key}' looks like placeholder/garbage "
+                f"(too few unique characters). Use a realistic value."
+            )
+
 
 class TaskBase(BaseModel):
     target_phone: str
@@ -45,6 +68,7 @@ class TaskBase(BaseModel):
                 raise ValueError(f"Slot key '{key[:20]}...' exceeds {MAX_SLOT_KEY_LENGTH} characters")
             if len(value) > MAX_SLOT_VALUE_LENGTH:
                 raise ValueError(f"Slot value for '{key}' exceeds {MAX_SLOT_VALUE_LENGTH} characters")
+            _validate_slot_value(key, value)
         return v
 
     @field_validator("scheduled_time")
@@ -100,6 +124,7 @@ class TaskEditRequest(BaseModel):
                     raise ValueError(f"Slot key '{key[:20]}...' exceeds {MAX_SLOT_KEY_LENGTH} characters")
                 if len(value) > MAX_SLOT_VALUE_LENGTH:
                     raise ValueError(f"Slot value for '{key}' exceeds {MAX_SLOT_VALUE_LENGTH} characters")
+                _validate_slot_value(key, value)
         return v
 
     @field_validator("scheduled_time")

@@ -225,3 +225,40 @@ async def test_count_by_user_in_last_24h_zero(mock_session: MagicMock) -> None:
     count = await repo.count_by_user_in_last_24h(user_id=999)
 
     assert count == 0
+
+
+# --- claim_for_execution (double-execute race prevention) ---
+
+
+@pytest.mark.asyncio
+async def test_claim_for_execution_returns_true_when_task_pending(mock_session: MagicMock) -> None:
+    mock_result = MagicMock()
+    mock_result.rowcount = 1
+    mock_session.exec = AsyncMock(return_value=mock_result)
+
+    repo = TaskRepository(session=mock_session)
+    claimed = await repo.claim_for_execution(task_id=1)
+
+    assert claimed is True
+    mock_session.exec.assert_awaited_once()
+    mock_session.commit.assert_awaited_once()
+
+    statement = mock_session.exec.await_args.args[0]
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": False}))
+    assert "UPDATE task" in compiled.lower() or "update task" in compiled.lower()
+    assert "status" in compiled.lower()
+    assert "updated_at" in compiled.lower()
+
+
+@pytest.mark.asyncio
+async def test_claim_for_execution_returns_false_when_not_claimable(mock_session: MagicMock) -> None:
+    mock_result = MagicMock()
+    mock_result.rowcount = 0
+    mock_session.exec = AsyncMock(return_value=mock_result)
+
+    repo = TaskRepository(session=mock_session)
+    claimed = await repo.claim_for_execution(task_id=1)
+
+    assert claimed is False
+    mock_session.exec.assert_awaited_once()
+    mock_session.commit.assert_awaited_once()
