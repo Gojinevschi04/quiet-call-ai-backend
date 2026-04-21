@@ -42,3 +42,39 @@ def test_profile_update_accepts_none_webhook_url() -> None:
 def test_profile_update_accepts_empty_webhook_url() -> None:
     profile = ProfileUpdate(webhook_url="")
     assert profile.webhook_url == ""
+
+
+import pytest
+from app.modules.users.schema import ProfileUpdate
+
+
+@pytest.mark.parametrize("good_name", ["Ana", "Maria-Elena", "Dr. Smith", "O'Brien", "Ана", "Maria Popescu"])
+def test_profile_update_accepts_valid_assistant_name(good_name: str) -> None:
+    update = ProfileUpdate(assistant_name=good_name)
+    assert update.assistant_name == good_name
+
+
+@pytest.mark.parametrize("bad_name", [
+    "x" * 41,           # too long
+    "<script>",          # angle brackets
+    "@everyone",         # special chars
+    "\n\ntrick",         # newline injection
+])
+def test_profile_update_rejects_bad_assistant_name(bad_name: str) -> None:
+    with pytest.raises(Exception):
+        ProfileUpdate(assistant_name=bad_name)
+
+
+def test_profile_update_empty_string_normalizes_to_none() -> None:
+    update = ProfileUpdate(assistant_name="")
+    assert update.assistant_name is None
+
+
+def test_profile_update_whitespace_only_rejected() -> None:
+    with pytest.raises(Exception, match="cannot be empty"):
+        ProfileUpdate(assistant_name="   ")
+
+
+def test_profile_update_trims_whitespace() -> None:
+    update = ProfileUpdate(assistant_name="  Ana  ")
+    assert update.assistant_name == "Ana"

@@ -108,6 +108,7 @@ async def _build_system_prompt_for_task(task_id: int, language: str) -> str | No
         template_repo = TemplateRepository(session=session)
         call_session_repo = CallSessionRepository(session=session)
         log_line_repo = LogLineRepository(session=session)
+        user_repo = UserRepository(session=session)
 
         task = await task_repo.get_by_id_any_user(task_id)
         if not task:
@@ -115,6 +116,9 @@ async def _build_system_prompt_for_task(task_id: int, language: str) -> str | No
         template = await template_repo.get_by_id(task.template_id)
         if not template:
             return None
+
+        owner = await user_repo.get_by_id(task.user_id)
+        assistant_name = owner.assistant_name if owner else None
 
         prior_context = None
         call_session = await call_session_repo.get_by_task_id(task_id)
@@ -133,6 +137,7 @@ async def _build_system_prompt_for_task(task_id: int, language: str) -> str | No
             use_function_tool=True,
             require_ai_disclosure=settings.AI_DISCLOSURE_REQUIRED,
             prior_attempt_context=prior_context,
+            assistant_name=assistant_name,
         )
 
 

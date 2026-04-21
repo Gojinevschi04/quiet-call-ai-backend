@@ -1,26 +1,29 @@
-from app.integrations.prompt_builder import DEFAULT_CALLER_NAME, PromptBuilder
+from app.integrations.prompt_builder import PromptBuilder
 
 
-def test_build_system_prompt_with_caller_name() -> None:
+def test_build_system_prompt_with_subject_name() -> None:
     prompt = PromptBuilder.build_system_prompt(
         base_script="Book an appointment.",
         slot_data={"patient_name": "Ion Popescu", "preferred_date": "2026-05-01"},
         language="en",
         use_function_tool=False,
     )
-    assert "Your name is Ion Popescu" in prompt
+    assert "on behalf of Ion Popescu" in prompt
     assert "ENGLISH" in prompt.upper()
     assert "[OBJECTIVE_ACHIEVED]" in prompt
     assert "CALL the `report_outcome` tool" not in prompt
 
 
-def test_build_system_prompt_uses_default_name_when_missing() -> None:
+def test_build_system_prompt_falls_back_when_no_subject_name() -> None:
+    """Regression: when no *_name slot is present, use a neutral disclosure rather
+    than impersonating some default identity."""
     prompt = PromptBuilder.build_system_prompt(
         base_script="Request information.",
         slot_data={"question_topic": "working hours"},
         language="en",
     )
-    assert f"Your name is {DEFAULT_CALLER_NAME}" in prompt
+    assert "on behalf of" not in prompt or "on behalf of {subject}" not in prompt
+    assert "automated assistant" in prompt
 
 
 def test_build_system_prompt_with_function_tool_mode() -> None:
@@ -72,7 +75,7 @@ def test_build_system_prompt_includes_all_slot_data() -> None:
         assert value in prompt
 
 
-def test_build_system_prompt_caller_name_priority() -> None:
+def test_build_system_prompt_subject_name_priority() -> None:
     slots = {
         "patient_name": "First",
         "customer_name": "Second",
@@ -83,7 +86,46 @@ def test_build_system_prompt_caller_name_priority() -> None:
         slot_data=slots,
         language="en",
     )
-    assert "Your name is First" in prompt
+    assert "on behalf of First" in prompt
+    assert "on behalf of Second" not in prompt
+
+
+def test_build_system_prompt_does_not_impersonate_subject() -> None:
+    """Regression: AI must not say 'my name is <subject>' — it's an assistant, not the subject."""
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Book appointment.",
+        slot_data={"patient_name": "Ion Popescu"},
+        language="en",
+    )
+    assert "my name is Ion Popescu" not in prompt.lower()
+    assert "your name is ion popescu" not in prompt.lower()
+    assert "NOT the person" in prompt
+    assert "impersonate" in prompt
+
+
+def test_build_system_prompt_includes_commitment_guardrail() -> None:
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Confirm reservation.",
+        slot_data={"guest_name": "Alex"},
+        language="en",
+    )
+    assert "COMMITMENT GUARDRAIL" in prompt
+    assert "payment" in prompt.lower()
+    assert "sensitive personal info" in prompt.lower()
+
+
+def test_build_system_prompt_includes_mid_call_questions() -> None:
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Confirm reservation.",
+        slot_data={"guest_name": "Alex"},
+        language="en",
+        use_function_tool=True,
+    )
+    assert "MID-CALL QUESTIONS" in prompt
+    assert "Who is calling" in prompt
+    assert "call back later" in prompt.lower()
+    assert "Remove me" in prompt
+    assert "Put me through to a human" in prompt
 
 
 def test_build_summary_prompt_for_each_language() -> None:
@@ -118,7 +160,6 @@ def test_build_system_prompt_skips_ai_disclosure_when_disabled() -> None:
         require_ai_disclosure=False,
     )
     assert "AI DISCLOSURE" not in prompt
-    assert "automated assistant" not in prompt
 
 
 def test_build_system_prompt_includes_prior_attempt_context_when_provided() -> None:
@@ -158,3 +199,79 @@ def test_build_system_prompt_disclosure_adapts_to_language() -> None:
         require_ai_disclosure=True,
     )
     assert "автоматический помощник" in prompt_ru
+
+
+def test_prompt_does_not_attach_a_company_name_to_the_assistant() -> None:
+    """Regression: AI must not call itself any company/brand name — just 'automated assistant'."""
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Confirm.",
+        slot_data={"patient_name": "Eva"},
+        language="en",
+    )
+    assert "Quiet Call AI" not in prompt
+    assert "automated assistant" in prompt
+    assert "on behalf of Eva" in prompt
+
+
+def test_prompt_disclosure_mentions_only_subject_for_on_behalf() -> None:
+    """Regression: 'on behalf of' must reference the slot_data subject, no other name."""
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Confirm.",
+        slot_data={"patient_name": "Ion Popescu", "preferred_date": "2026-05-01"},
+        language="en",
+    )
+    assert "on behalf of Ion Popescu" in prompt
+    assert "on behalf of Quiet Call AI" not in prompt
+
+
+def test_prompt_uses_assistant_name_when_set() -> None:
+    """Regression: assistant_name from user profile threads into the disclosure."""
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Confirm reservation.",
+        slot_data={"guest_name": "Eva"},
+        language="en",
+        assistant_name="Ana",
+    )
+    assert "Hi, this is Ana, an automated assistant calling on behalf of Eva." in prompt
+
+
+def test_prompt_uses_assistant_name_in_romanian() -> None:
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Confirmă rezervarea.",
+        slot_data={"guest_name": "Eva Popescu"},
+        language="ro",
+        assistant_name="Maria",
+    )
+    assert "Bună ziua, sunt Maria, un asistent automat care sună din partea lui Eva Popescu." in prompt
+
+
+def test_prompt_falls_back_to_neutral_when_assistant_name_is_none() -> None:
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Confirm.",
+        slot_data={"guest_name": "Eva"},
+        language="en",
+        assistant_name=None,
+    )
+    assert "Hi, this is an automated assistant calling on behalf of Eva." in prompt
+    assert "Hi, this is None," not in prompt
+
+
+def test_prompt_named_without_subject_uses_short_intro() -> None:
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Ask about opening hours.",
+        slot_data={"business_name": "Pharmacy"},
+        language="en",
+        assistant_name="Ana",
+    )
+    assert "Hi, this is Ana, an automated assistant." in prompt
+
+
+def test_assistant_name_appears_in_identity_question_guidance() -> None:
+    """If asked their name mid-call, the AI should identify with the configured name."""
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Confirm.",
+        slot_data={"guest_name": "Eva"},
+        language="en",
+        assistant_name="Ana",
+    )
+    assert "I'm Ana, an automated assistant" in prompt

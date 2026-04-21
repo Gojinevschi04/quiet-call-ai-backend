@@ -12,6 +12,28 @@ PHONE_REGEX = re.compile(r"^\+?[1-9]\d{7,14}$")
 WEBHOOK_ALLOWED_SCHEMES = {"https", "http"}
 WEBHOOK_MAX_URL_LENGTH = 2048
 
+ASSISTANT_NAME_MAX_LENGTH = 40
+ASSISTANT_NAME_FORBIDDEN = set("<>{}\\\"@\n\r\t")
+ASSISTANT_NAME_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _validate_assistant_name(raw: str) -> str:
+    """Short human-ish label (letters, spaces, dots, apostrophes, hyphens). Max 40 chars.
+
+    Rejects newlines, control chars, template markers, angle brackets, @ to prevent
+    prompt-injection payloads from flowing into OpenAI as the AI's identity.
+    """
+    if ASSISTANT_NAME_CONTROL.search(raw):
+        raise ValueError("Assistant name cannot contain control characters")
+    if any(char in ASSISTANT_NAME_FORBIDDEN for char in raw):
+        raise ValueError("Assistant name contains forbidden characters")
+    trimmed = raw.strip()
+    if not trimmed:
+        raise ValueError("Assistant name cannot be empty")
+    if len(trimmed) > ASSISTANT_NAME_MAX_LENGTH:
+        raise ValueError(f"Assistant name exceeds {ASSISTANT_NAME_MAX_LENGTH} characters")
+    return trimmed
+
 
 def _validate_webhook_url(url: str) -> str:
     """Reject webhook URLs that could be used for SSRF.
@@ -100,6 +122,7 @@ class UserResponse(BaseModel):
     phone_number: str | None = None
     email_notifications: bool = True
     webhook_url: str | None = None
+    assistant_name: str | None = None
     created_at: str
     updated_at: str
 
@@ -116,6 +139,7 @@ class ProfileUpdate(BaseModel):
     email: EmailStr | None = None
     email_notifications: bool | None = None
     webhook_url: str | None = None
+    assistant_name: str | None = None
 
     @field_validator("webhook_url")
     @classmethod
@@ -123,6 +147,13 @@ class ProfileUpdate(BaseModel):
         if v is None or v == "":
             return v
         return _validate_webhook_url(v)
+
+    @field_validator("assistant_name")
+    @classmethod
+    def validate_assistant_name(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        return _validate_assistant_name(v)
 
 
 class UserUsageResponse(BaseModel):

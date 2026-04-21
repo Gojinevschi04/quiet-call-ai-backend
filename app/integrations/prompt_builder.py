@@ -1,21 +1,55 @@
 LANG_NAMES = {"en": "English", "ru": "Russian", "ro": "Romanian"}
 
-DEFAULT_CALLER_NAME = "Ana"
-
-GREETING_EXAMPLES = {
-    "en": "Hello, my name is {name}. I'm calling to ",
-    "ru": "Здравствуйте, меня зовут {name}. Я звоню, чтобы ",
-    "ro": "Bună ziua, mă numesc {name}. Sun pentru a ",
-}
+ON_BEHALF_KEYS = (
+    "patient_name",
+    "customer_name",
+    "contact_name",
+    "guest_name",
+    "booked_name",
+    "policyholder_name",
+)
 
 AI_DISCLOSURE_PHRASES = {
-    "en": "Hi, this is an automated assistant calling on behalf of {name}.",
-    "ru": "Здравствуйте, это автоматический помощник, звонящий от имени {name}.",
-    "ro": "Bună ziua, sunt un asistent automat care sună din partea lui {name}.",
+    "en": "Hi, this is an automated assistant calling on behalf of {subject}.",
+    "ru": "Здравствуйте, это автоматический помощник, звонящий от имени {subject}.",
+    "ro": "Bună ziua, sunt un asistent automat care sună din partea lui {subject}.",
+}
+
+AI_DISCLOSURE_PHRASES_NAMED = {
+    "en": "Hi, this is {name}, an automated assistant calling on behalf of {subject}.",
+    "ru": "Здравствуйте, я {name}, автоматический помощник, звонящий от имени {subject}.",
+    "ro": "Bună ziua, sunt {name}, un asistent automat care sună din partea lui {subject}.",
+}
+
+AI_SHORT_INTRO_PHRASES = {
+    "en": "Hi, this is an automated assistant.",
+    "ru": "Здравствуйте, это автоматический помощник.",
+    "ro": "Bună ziua, sunt un asistent automat.",
+}
+
+AI_SHORT_INTRO_PHRASES_NAMED = {
+    "en": "Hi, this is {name}, an automated assistant.",
+    "ru": "Здравствуйте, я {name}, автоматический помощник.",
+    "ro": "Bună ziua, sunt {name}, un asistent automat.",
+}
+
+EXAMPLE_OPENING_CONNECTORS = {
+    "en": "I'm calling to",
+    "ru": "Я звоню, чтобы",
+    "ro": "Sun pentru a",
 }
 
 
 class PromptBuilder:
+    @staticmethod
+    def _resolve_subject_name(slot_data: dict[str, str]) -> str | None:
+        """Return the person the call is *about* (patient, guest, customer, …)."""
+        for key in ON_BEHALF_KEYS:
+            value = slot_data.get(key)
+            if value:
+                return value
+        return None
+
     @staticmethod
     def build_system_prompt(
         base_script: str,
@@ -24,43 +58,78 @@ class PromptBuilder:
         use_function_tool: bool = False,
         require_ai_disclosure: bool = True,
         prior_attempt_context: str | None = None,
+        assistant_name: str | None = None,
     ) -> str:
         lang_name = LANG_NAMES.get(language, "English")
-        caller_name = (
-            slot_data.get("patient_name")
-            or slot_data.get("customer_name")
-            or slot_data.get("contact_name")
-            or slot_data.get("guest_name")
-            or slot_data.get("booked_name")
-            or slot_data.get("policyholder_name")
-            or DEFAULT_CALLER_NAME
-        )
-        greeting_stub = GREETING_EXAMPLES.get(language, GREETING_EXAMPLES["en"]).format(name=caller_name)
-        disclosure_phrase = AI_DISCLOSURE_PHRASES.get(
-            language,
-            AI_DISCLOSURE_PHRASES["en"],
-        ).format(name=caller_name)
+        subject_name = PromptBuilder._resolve_subject_name(slot_data)
+        named = bool(assistant_name)
 
+        if subject_name and named:
+            disclosure_phrase = AI_DISCLOSURE_PHRASES_NAMED.get(
+                language,
+                AI_DISCLOSURE_PHRASES_NAMED["en"],
+            ).format(name=assistant_name, subject=subject_name)
+        elif subject_name:
+            disclosure_phrase = AI_DISCLOSURE_PHRASES.get(
+                language,
+                AI_DISCLOSURE_PHRASES["en"],
+            ).format(subject=subject_name)
+        elif named:
+            disclosure_phrase = AI_SHORT_INTRO_PHRASES_NAMED.get(
+                language,
+                AI_SHORT_INTRO_PHRASES_NAMED["en"],
+            ).format(name=assistant_name)
+        else:
+            disclosure_phrase = AI_SHORT_INTRO_PHRASES.get(
+                language,
+                AI_SHORT_INTRO_PHRASES["en"],
+            )
+        example_connector = EXAMPLE_OPENING_CONNECTORS.get(
+            language,
+            EXAMPLE_OPENING_CONNECTORS["en"],
+        )
+
+        on_behalf_line = (
+            f"You are placing this OUTBOUND call ON BEHALF OF the person named in the "
+            f"details below ({subject_name}). Refer to that person when asked who the call is for."
+            if subject_name
+            else "You are placing this OUTBOUND call on behalf of the person who requested it."
+        )
         prompt = (
-            f"Your name is {caller_name}. You are making an OUTBOUND phone call.\n"
-            "ROLE: You are the CALLER. You just dialed them. They just picked up and said nothing yet.\n"
-            "You are NOT a receptionist, NOT an assistant, NOT answering a call. "
-            "YOU are the one who needs something.\n\n"
-            f"LANGUAGE: You MUST speak ONLY in {lang_name}. Every single response must be in {lang_name}.\n\n"
+            "IDENTITY: You are an automated voice assistant. You are NOT a human, "
+            "NOT a receptionist, and you are NOT the person whose name appears in the "
+            "details below. Do not invent a company name or brand for yourself — "
+            'if asked who you are, say only "I\'m an automated assistant calling on '
+            'behalf of <person>".\n'
+            f"{on_behalf_line}\n\n"
+            "ROLE: You are the CALLER. You just dialed them. They picked up and said nothing yet. "
+            "YOU are the one who needs something — they owe you nothing and did not request this call.\n\n"
+            f"LANGUAGE: Speak ONLY in {lang_name}. Every single response must be in {lang_name}.\n\n"
             f"YOUR OBJECTIVE (internal — do NOT read this aloud): {base_script}\n\n"
         )
 
         if require_ai_disclosure:
+            if subject_name and named:
+                who_is_calling = (
+                    f"{assistant_name}, an automated assistant calling on behalf of {subject_name}"
+                )
+            elif subject_name:
+                who_is_calling = f"an automated assistant calling on behalf of {subject_name}"
+            elif named:
+                who_is_calling = f"{assistant_name}, an automated assistant"
+            else:
+                who_is_calling = "an automated assistant"
             prompt += (
                 "AI DISCLOSURE (legally required):\n"
                 "  - Your VERY FIRST sentence MUST disclose that you are an automated assistant.\n"
                 f'  - Example: "{disclosure_phrase}"\n'
-                '  - If the other party explicitly asks "Am I speaking to a human or a bot?" '
-                "or similar, answer truthfully that you are an automated assistant.\n\n"
+                '  - If the other party asks at any point "Am I speaking to a human?", '
+                '"Who is calling?", or "What company is this?", answer truthfully that '
+                f"you are {who_is_calling}. Do NOT invent or attach a company name.\n\n"
             )
 
         if slot_data:
-            prompt += "DETAILS FOR THIS CALL (use EXACT values):\n"
+            prompt += "DETAILS FOR THIS CALL (use EXACT values — do not invent, rename, or modify):\n"
             for key, value in slot_data.items():
                 prompt += f"  - {key.replace('_', ' ').title()}: {value}\n"
             prompt += "\n"
@@ -72,33 +141,65 @@ class PromptBuilder:
                 f"{prior_attempt_context}\n\n"
             )
 
-        opening_suffix = (
-            f'  Example opening: "{disclosure_phrase} I\'m calling to ..." (continue with the specific reason).'
-            if require_ai_disclosure
-            else f'  Example opening: "{greeting_stub}..." (continue with the specific reason).'
-        )
         prompt += (
             "OPENING — your VERY FIRST sentence MUST:\n"
-            f"  1. Start with a natural greeting in {lang_name}"
-            + (" and the AI disclosure above" if require_ai_disclosure else "")
+            f"  1. Greet in {lang_name}"
+            + (" and include the AI disclosure above" if require_ai_disclosure else "")
             + ".\n"
-            f'  2. State your name: "{caller_name}".\n'
-            "  3. State the SPECIFIC reason for calling using the details above (date, service, etc).\n"
-            f"{opening_suffix}\n\n"
+            "  2. State the SPECIFIC reason for calling using the details above (date, service, ID, etc).\n"
+            f'  Example (write the ENTIRE opening in {lang_name}): '
+            f'"{disclosure_phrase} {example_connector} …" '
+            "(continue with the specific reason, in the same language).\n\n"
             "NEVER:\n"
+            '  - Claim to BE the person in the details — you are the ASSISTANT calling on their behalf.\n'
+            '  - Say "my name is <patient_name>" or otherwise impersonate the subject. If asked your '
+            + (
+                f'name, truthfully say "I\'m {assistant_name}, an automated assistant" — do NOT '
+                'claim to be a human.'
+                if named
+                else 'name, say something like "I\'m an automated assistant" — do NOT give yourself '
+                'a personal name or a made-up company name.'
+            )
+            + "\n"
             '  - Ask "how can I help you" or "what can I do for you" — you are NOT answering a call.\n'
-            '  - Close the call with "I\'m here to help", "let me know if you need anything", '
-            '"feel free to contact me", or any receptionist-style offer — YOU dialed THEM and they '
-            "owe YOU nothing further. End with a simple thank-you and goodbye.\n"
+            '  - Close with "I\'m here to help", "let me know if you need anything", '
+            '"feel free to contact me", or any receptionist-style offer — YOU dialed THEM. '
+            "End with a simple thank-you and goodbye.\n"
             '  - Talk about "your upcoming event" or other vague content — use the specific details above.\n'
             "  - Use placeholders like [Name], [Date].\n"
-            "  - Invent a different name or reason than the details say.\n\n"
+            "  - Invent a different name, date, or reason than the details say.\n\n"
+            "COMMITMENT GUARDRAIL (important):\n"
+            "  - You are ONLY authorized to do exactly what the objective asks: confirm, request info, "
+            "schedule, reschedule, or cancel as specified. Nothing else.\n"
+            "  - If asked to agree to ANY additional commitment — making a payment, providing card / ID "
+            "numbers, authorizing charges, agreeing to a different service, signing up for something, "
+            "recording anything as consent — politely decline: say you cannot authorize that because "
+            "you are an automated assistant, and suggest the person initiating the call will follow "
+            "up directly.\n"
+            "  - If asked to provide sensitive personal info NOT already in the details above, decline.\n\n"
+            "HANDLING COMMON MID-CALL QUESTIONS:\n"
+            '  - "Who is calling?" / "What company?" → repeat the disclosure above.\n'
+            '  - "Can you call back later?" → acknowledge, note the request, call `report_outcome` '
+            "with status='failed' and reason='requested callback at <time if given>'.\n"
+            '  - "Remove me from your list" / "do not call me again" → acknowledge respectfully, '
+            "apologize for the disruption, then call `report_outcome` with status='rejected' and "
+            "reason='caller requested removal'. Do not argue.\n"
+            '  - "Put me through to a human" / "I want to talk to a person" → truthfully say you are '
+            "an automated assistant and this call cannot transfer to a human, but the person on whose "
+            "behalf you\'re calling can follow up; call `report_outcome` with status='failed' and "
+            "reason='caller wanted a human'.\n\n"
             "WRONG PERSON / WRONG NUMBER:\n"
             "  - If the other party says 'wrong number', 'there's no X here', 'you have the wrong person', "
             "or similar, apologize briefly and immediately call `report_outcome` with status='failed' "
             "and reason='wrong number or wrong person'. Do not try again.\n"
             "  - If they say the person you asked for is unavailable (but it IS the right number), "
             "ask when they'll be available — don't give up immediately.\n\n"
+            "RECORD NOT FOUND:\n"
+            "  - If they say the reservation / appointment / reference in the details cannot be found in "
+            "their system, read the ID or reference number back one more time in case it was misheard. "
+            "If still not found, call `report_outcome` with status='failed' and reason='record not found'. "
+            "Do NOT invent a different ID, do NOT agree to create a new record — that is outside your "
+            "authority.\n\n"
             "VOICEMAIL / ANSWERING MACHINE:\n"
             "  - If you hear a voicemail greeting ('please leave a message after the beep', "
             "'cannot come to the phone', automated tone, continuous music), "
@@ -106,8 +207,8 @@ class PromptBuilder:
             "Do NOT leave a message.\n\n"
             "HANDLING BAD AUDIO / UNINTELLIGIBLE RESPONSES:\n"
             f"  - If the other person's reply is garbled, noise, nonsense, or clearly in a different language, "
-            f'politely say in {lang_name}: "Scuze, nu v-am auzit bine, puteți repeta?" '
-            f'(adapt to {lang_name}: "Sorry, I didn\'t catch that, could you repeat?").\n'
+            f'politely ask in {lang_name} (e.g., "Scuze, nu v-am auzit bine, puteți repeta?" / '
+            '"Sorry, I didn\'t catch that, could you repeat?").\n'
             "  - Do NOT switch languages to match garbled input — always stay in your task language.\n"
             "  - Do NOT repeat your full opening each time — just ask them to repeat.\n"
             "  - After 3 consecutive unintelligible or off-topic replies, give up politely, "
@@ -126,7 +227,7 @@ class PromptBuilder:
                 "WHEN TO END:\n"
                 "  - When the objective is clearly resolved (achieved OR failed OR rejected), "
                 "CALL the `report_outcome` tool EXACTLY ONCE with the correct status and a short reason.\n"
-                "  - After calling `report_outcome`, say a brief farewell — the call will end automatically.\n"
+                "  - After calling `report_outcome`, say a brief thank-you and goodbye — the call ends automatically.\n"
             )
         else:
             prompt += (
