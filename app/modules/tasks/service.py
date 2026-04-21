@@ -35,6 +35,10 @@ class TaskService:
         template = await self.template_repository.get_by_id(data.template_id)
         if not template:
             raise TemplateNotFoundError(f"Template with id {data.template_id} not found")
+        if not template.is_active:
+            raise TemplateNotFoundError(
+                f"Template with id {data.template_id} is deactivated and cannot be used"
+            )
 
         missing_slots = [slot for slot in template.required_slots if slot not in data.slot_data]
         if missing_slots:

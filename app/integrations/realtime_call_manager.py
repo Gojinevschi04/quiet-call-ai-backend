@@ -57,6 +57,10 @@ class RealtimeCallManager:
         template = await self.template_repository.get_by_id(task.template_id)
         if not template:
             raise ValueError(f"Template {task.template_id} not found")
+        if not template.is_active:
+            raise ValueError(
+                f"Template {task.template_id} is deactivated — cannot execute scheduled task"
+            )
 
         claimed = await self.task_repository.claim_for_execution(task_id)
         if not claimed:

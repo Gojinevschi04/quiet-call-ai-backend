@@ -699,3 +699,22 @@ async def test_rate_task_other_user_raises_not_found() -> None:
 
     mock_task_repo.get_by_id.assert_awaited_once_with(1, 42)
     mock_task_repo.get_by_id_any_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_task_rejects_deactivated_template(mock_template: DialogTemplate) -> None:
+    """Regression: soft-deleted (is_active=False) templates cannot be used for new tasks."""
+    mock_template.is_active = False
+    mock_task_repo = MagicMock(spec=TaskRepository)
+    mock_template_repo = MagicMock(spec=TemplateRepository)
+    mock_template_repo.get_by_id = AsyncMock(return_value=mock_template)
+
+    service = TaskService(task_repository=mock_task_repo, template_repository=mock_template_repo)
+    data = TaskCreate(
+        target_phone="+37312345678",
+        template_id=1,
+        slot_data={"preferred_date": "2026-05-10", "preferred_time": "10:00"},
+    )
+
+    with pytest.raises(TemplateNotFoundError, match="deactivated"):
+        await service.create_task(data, user_id=1)

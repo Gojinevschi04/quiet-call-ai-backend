@@ -297,3 +297,55 @@ async def test_execute_task_calls_claim_for_execution_exactly_once() -> None:
         await manager.execute_task(task_id=1, user_id=1)
 
     task_repo.claim_for_execution.assert_awaited_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_execute_task_twilio_network_error_marks_task_failed() -> None:
+    """Regression: if Twilio raises a connection/network error, task FAILS with reason."""
+    manager, task_repo, template_repo, _ = _make_manager_with_mocks()
+    existing_task = Task(
+        id=1, target_phone="+37360000001", status=TaskStatus.PENDING,
+        template_id=5, user_id=7, slot_data={},
+    )
+    template = DialogTemplate(
+        id=5, name="T", base_script="x", required_slots=[], language="en", is_active=True,
+    )
+    task_repo.get_by_id = AsyncMock(return_value=existing_task)
+    template_repo.get_by_id = AsyncMock(return_value=template)
+
+    manager._voice = MagicMock()
+    manager._voice.initiate_call_with_twiml = AsyncMock(
+        side_effect=ConnectionError("Twilio API unreachable"),
+    )
+
+    with patch("app.core.config.settings.BASE_URL", "https://example.com"):
+        result = await manager.execute_task(task_id=1, user_id=7)
+
+    assert result.status == TaskStatus.FAILED
+    assert "Twilio API unreachable" in result.error_reason
+
+
+@pytest.mark.asyncio
+async def test_execute_task_twilio_5xx_marks_task_failed() -> None:
+    """Regression: Twilio 5xx responses surface in task.error_reason."""
+    manager, task_repo, template_repo, _ = _make_manager_with_mocks()
+    existing_task = Task(
+        id=1, target_phone="+37360000001", status=TaskStatus.PENDING,
+        template_id=5, user_id=7, slot_data={},
+    )
+    template = DialogTemplate(
+        id=5, name="T", base_script="x", required_slots=[], language="en", is_active=True,
+    )
+    task_repo.get_by_id = AsyncMock(return_value=existing_task)
+    template_repo.get_by_id = AsyncMock(return_value=template)
+
+    manager._voice = MagicMock()
+    manager._voice.initiate_call_with_twiml = AsyncMock(
+        side_effect=RuntimeError("HTTP 503: Twilio service unavailable"),
+    )
+
+    with patch("app.core.config.settings.BASE_URL", "https://example.com"):
+        result = await manager.execute_task(task_id=1, user_id=7)
+
+    assert result.status == TaskStatus.FAILED
+    assert "503" in result.error_reason

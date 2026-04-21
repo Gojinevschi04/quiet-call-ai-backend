@@ -1,10 +1,12 @@
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 from pydantic import BaseModel, field_validator
 
 from app.core.constants import MAX_SLOT_COUNT, MAX_SLOT_KEY_LENGTH, MAX_SLOT_VALUE_LENGTH
+
+MAX_SCHEDULED_DAYS_IN_FUTURE = 90
 
 
 class TaskStatus(StrEnum):
@@ -76,8 +78,13 @@ class TaskBase(BaseModel):
     def validate_scheduled_time(cls, v: datetime | None) -> datetime | None:
         if v is None:
             return v
-        if v <= datetime.now():
+        now = datetime.now()
+        if v <= now:
             raise ValueError("Scheduled time must be in the future")
+        if v > now + timedelta(days=MAX_SCHEDULED_DAYS_IN_FUTURE):
+            raise ValueError(
+                f"Scheduled time cannot be more than {MAX_SCHEDULED_DAYS_IN_FUTURE} days in the future"
+            )
         from app.core.config import settings
 
         if not (settings.CALL_WINDOW_START_HOUR <= v.hour < settings.CALL_WINDOW_END_HOUR):
@@ -133,8 +140,13 @@ class TaskEditRequest(BaseModel):
     def validate_scheduled_time(cls, v: datetime | None) -> datetime | None:
         if v is None:
             return v
-        if v <= datetime.now():
+        now = datetime.now()
+        if v <= now:
             raise ValueError("Scheduled time must be in the future")
+        if v > now + timedelta(days=MAX_SCHEDULED_DAYS_IN_FUTURE):
+            raise ValueError(
+                f"Scheduled time cannot be more than {MAX_SCHEDULED_DAYS_IN_FUTURE} days in the future"
+            )
         from app.core.config import settings
 
         if not (settings.CALL_WINDOW_START_HOUR <= v.hour < settings.CALL_WINDOW_END_HOUR):
@@ -184,8 +196,13 @@ class TaskDuplicateRequest(BaseModel):
     def validate_scheduled_time(cls, scheduled_time: datetime | None) -> datetime | None:
         if scheduled_time is None:
             return scheduled_time
-        if scheduled_time <= datetime.now():
+        now = datetime.now()
+        if scheduled_time <= now:
             raise ValueError("Scheduled time must be in the future")
+        if scheduled_time > now + timedelta(days=MAX_SCHEDULED_DAYS_IN_FUTURE):
+            raise ValueError(
+                f"Scheduled time cannot be more than {MAX_SCHEDULED_DAYS_IN_FUTURE} days in the future"
+            )
         from app.core.config import settings
 
         if not (settings.CALL_WINDOW_START_HOUR <= scheduled_time.hour < settings.CALL_WINDOW_END_HOUR):

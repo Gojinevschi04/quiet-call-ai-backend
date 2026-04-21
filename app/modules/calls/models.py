@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from sqlalchemy import BigInteger, Column
 from sqlmodel import Field
 
 from app.core.models import BaseModel
@@ -14,10 +15,11 @@ class CallSession(BaseModel, table=True):
     duration: int | None = Field(default=None, nullable=True)
     recording_uri: str | None = Field(default=None, nullable=True)
     local_recording_path: str | None = Field(default=None, nullable=True)
-    input_audio_tokens: int = Field(default=0, nullable=False)
-    output_audio_tokens: int = Field(default=0, nullable=False)
-    input_text_tokens: int = Field(default=0, nullable=False)
-    output_text_tokens: int = Field(default=0, nullable=False)
+    # BIGINT so heavy usage (>2.1 B tokens per column) never overflows INTEGER.
+    input_audio_tokens: int = Field(default=0, sa_column=Column(BigInteger, nullable=False, default=0))
+    output_audio_tokens: int = Field(default=0, sa_column=Column(BigInteger, nullable=False, default=0))
+    input_text_tokens: int = Field(default=0, sa_column=Column(BigInteger, nullable=False, default=0))
+    output_text_tokens: int = Field(default=0, sa_column=Column(BigInteger, nullable=False, default=0))
 
 
 class LogLine(BaseModel, table=True):

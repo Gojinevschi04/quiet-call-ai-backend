@@ -439,3 +439,36 @@ async def test_verify_twilio_signature_bypasses_when_token_empty() -> None:
             return None
 
         app.dependency_overrides[verify_twilio_signature] = _noop
+
+
+@pytest.mark.asyncio
+async def test_twilio_status_callback_signature_check_runs_before_db_lookup() -> None:
+    """Regression: signature rejection must precede any task_id lookup so an
+    unauthenticated attacker can't probe which task_ids exist via response timing
+    or differential DB error.
+    """
+    from unittest.mock import AsyncMock, patch as real_patch
+    from app.main import app
+    from app.modules.webhooks.views import verify_twilio_signature
+    from httpx import ASGITransport, AsyncClient
+
+    if verify_twilio_signature in app.dependency_overrides:
+        del app.dependency_overrides[verify_twilio_signature]
+    db_lookup = AsyncMock(return_value=None)
+    try:
+        with real_patch("app.modules.webhooks.views.settings.TWILIO_AUTH_TOKEN", "real-token"), \
+             real_patch(
+                 "app.modules.calls.repository.CallSessionRepository.get_by_task_id",
+                 new=db_lookup,
+             ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as raw:
+                response = await raw.post(
+                    "/webhooks/calls/999999/status",
+                    data={"CallSid": "CA123", "CallStatus": "completed"},
+                )
+                assert response.status_code == 403
+                db_lookup.assert_not_called()
+    finally:
+        async def _noop() -> None: return None
+        app.dependency_overrides[verify_twilio_signature] = _noop

@@ -123,3 +123,33 @@ def test_task_create_accepts_realistic_slot_value(good_value: str) -> None:
         slot_data={"preferred_date": good_value},
     )
     assert task_data.slot_data["preferred_date"] == good_value
+
+
+def test_task_create_rejects_scheduled_more_than_90_days_future() -> None:
+    """Regression: `scheduled_time` must be ≤ 90 days in the future."""
+    from datetime import datetime, timedelta
+    from app.modules.tasks.schema import TaskCreate
+    import pytest
+
+    too_far = (datetime.now() + timedelta(days=91)).replace(hour=10, minute=0, second=0, microsecond=0)
+    with pytest.raises(Exception, match="90 days"):
+        TaskCreate(
+            target_phone="+37312345678",
+            template_id=1,
+            slot_data={},
+            scheduled_time=too_far,
+        )
+
+
+def test_task_create_accepts_scheduled_within_90_days() -> None:
+    from datetime import datetime, timedelta
+    from app.modules.tasks.schema import TaskCreate
+
+    ok = (datetime.now() + timedelta(days=89)).replace(hour=10, minute=0, second=0, microsecond=0)
+    task = TaskCreate(
+        target_phone="+37312345678",
+        template_id=1,
+        slot_data={},
+        scheduled_time=ok,
+    )
+    assert task.scheduled_time == ok

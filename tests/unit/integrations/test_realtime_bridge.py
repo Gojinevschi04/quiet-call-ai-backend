@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -286,3 +286,107 @@ async def test_run_sets_init_failed_true_when_openai_connect_raises() -> None:
         await bridge.run()
 
     assert bridge.init_failed is True
+
+
+@pytest.mark.asyncio
+async def test_report_outcome_ignores_duplicate_call() -> None:
+    """Regression: a second report_outcome call must not overwrite the first."""
+    import json
+    bridge = _make_bridge()
+    bridge.openai_ws = AsyncMock()
+    bridge.openai_ws.send = AsyncMock()
+
+    first_event = {
+        "name": "report_outcome",
+        "call_id": "call_1",
+        "arguments": json.dumps({"status": "achieved", "reason": "Done."}),
+    }
+    second_event = {
+        "name": "report_outcome",
+        "call_id": "call_2",
+        "arguments": json.dumps({"status": "failed", "reason": "No, wait."}),
+    }
+
+    await bridge._handle_function_call(first_event)
+    first_call_count = bridge.openai_ws.send.await_count
+    await bridge._handle_function_call(second_event)
+
+    assert bridge.outcome == {"status": "achieved", "reason": "Done."}
+    assert bridge.openai_ws.send.await_count == first_call_count
+
+
+@pytest.mark.asyncio
+async def test_run_persists_partial_transcript_on_openai_disconnect() -> None:
+    """Regression: if OpenAI WS closes mid-call, captured transcript survives to finalize."""
+    import websockets
+    bridge = _make_bridge()
+    bridge.transcript_buffer = [
+        {"speaker": "agent", "text": "Hello.", "timestamp": "2026-04-21T12:00:00"},
+        {"speaker": "interlocutor", "text": "Hi.", "timestamp": "2026-04-21T12:00:05"},
+    ]
+
+    with patch("app.integrations.realtime_bridge.websockets.connect") as mock_connect:
+        mock_connect.side_effect = websockets.exceptions.ConnectionClosed(
+            rcvd=None, sent=None,
+        )
+        await bridge.run()
+
+    assert bridge.init_failed is True
+    assert len(bridge.transcript_buffer) == 2
+
+
+@pytest.mark.asyncio
+async def test_backup_hangup_fires_when_drain_never_completes() -> None:
+    """Regression: if response.output_audio.done never arrives, backup timer still hangs up Twilio."""
+    import app.integrations.realtime_bridge as bridge_module
+
+    bridge = _make_bridge()
+    bridge.call_sid = "CA123"
+    bridge._hangup_pending = True
+
+    with patch.object(bridge_module, "HANGUP_BACKUP_TIMEOUT_SECONDS", 0.05), \
+         patch("app.integrations.realtime_bridge.TwilioAdapter") as mock_adapter_cls:
+        mock_adapter = mock_adapter_cls.return_value
+        mock_adapter.hangup = AsyncMock()
+
+        bridge._schedule_backup_hangup()
+        await bridge._backup_hangup_task
+
+    mock_adapter.hangup.assert_awaited_once_with("CA123")
+    assert bridge._hangup_done is True
+
+
+@pytest.mark.asyncio
+async def test_backup_hangup_skips_when_drain_already_succeeded() -> None:
+    """Regression: backup timer must not double-hangup when the normal drain path already fired."""
+    import app.integrations.realtime_bridge as bridge_module
+
+    bridge = _make_bridge()
+    bridge.call_sid = "CA123"
+    bridge._hangup_done = True  # simulate drain path already fired
+
+    with patch.object(bridge_module, "HANGUP_BACKUP_TIMEOUT_SECONDS", 0.05), \
+         patch("app.integrations.realtime_bridge.TwilioAdapter") as mock_adapter_cls:
+        mock_adapter = mock_adapter_cls.return_value
+        mock_adapter.hangup = AsyncMock()
+
+        bridge._schedule_backup_hangup()
+        await bridge._backup_hangup_task
+
+    mock_adapter.hangup.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_force_hangup_is_idempotent() -> None:
+    """Regression: calling _force_hangup twice only hits Twilio once."""
+    bridge = _make_bridge()
+    bridge.call_sid = "CA123"
+
+    with patch("app.integrations.realtime_bridge.TwilioAdapter") as mock_adapter_cls:
+        mock_adapter = mock_adapter_cls.return_value
+        mock_adapter.hangup = AsyncMock()
+
+        await bridge._force_hangup(source="drain")
+        await bridge._force_hangup(source="backup timer")
+
+    mock_adapter.hangup.assert_awaited_once()

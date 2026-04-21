@@ -183,3 +183,101 @@ async def test_process_continues_webhook_when_email_raises(mock_task: Task) -> N
         await processor.process(mock_task)
 
     webhook_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_archive_logs_skips_when_no_call_session(mock_task: Task) -> None:
+    """_archive_logs: no call session → no log-line query, no crash."""
+    from app.modules.notifications.post_call import PostCallProcessor
+
+    mock_call_session_repo = MagicMock(spec=CallSessionRepository)
+    mock_call_session_repo.get_by_task_id = AsyncMock(return_value=None)
+    mock_log_line_repo = MagicMock(spec=LogLineRepository)
+    mock_log_line_repo.get_by_session_id = AsyncMock()
+
+    processor = PostCallProcessor(
+        task_repository=MagicMock(spec=TaskRepository),
+        user_repository=MagicMock(spec=UserRepository),
+        call_session_repository=mock_call_session_repo,
+        log_line_repository=mock_log_line_repo,
+        template_repository=MagicMock(spec=TemplateRepository),
+    )
+    await processor._archive_logs(mock_task)
+
+    mock_log_line_repo.get_by_session_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_archive_logs_fetches_log_lines_when_session_exists(
+    mock_task: Task, mock_call_session: CallSession,
+) -> None:
+    """_archive_logs: with a call session, log lines are fetched for archival."""
+    from app.modules.notifications.post_call import PostCallProcessor
+
+    mock_call_session_repo = MagicMock(spec=CallSessionRepository)
+    mock_call_session_repo.get_by_task_id = AsyncMock(return_value=mock_call_session)
+    mock_log_line_repo = MagicMock(spec=LogLineRepository)
+    mock_log_line_repo.get_by_session_id = AsyncMock(return_value=[])
+
+    processor = PostCallProcessor(
+        task_repository=MagicMock(spec=TaskRepository),
+        user_repository=MagicMock(spec=UserRepository),
+        call_session_repository=mock_call_session_repo,
+        log_line_repository=mock_log_line_repo,
+        template_repository=MagicMock(spec=TemplateRepository),
+    )
+    await processor._archive_logs(mock_task)
+
+    mock_log_line_repo.get_by_session_id.assert_awaited_once_with(mock_call_session.id)
+
+
+@pytest.mark.asyncio
+async def test_save_recording_locally_skips_when_no_recording_uri(mock_task: Task) -> None:
+    """_save_recording_locally: no recording URI → early return, no download."""
+    from app.modules.notifications.post_call import PostCallProcessor
+
+    call_session_without_recording = MagicMock()
+    call_session_without_recording.recording_uri = None
+    call_session_without_recording.local_recording_path = None
+
+    mock_call_session_repo = MagicMock(spec=CallSessionRepository)
+    mock_call_session_repo.get_by_task_id = AsyncMock(return_value=call_session_without_recording)
+
+    processor = PostCallProcessor(
+        task_repository=MagicMock(spec=TaskRepository),
+        user_repository=MagicMock(spec=UserRepository),
+        call_session_repository=mock_call_session_repo,
+        log_line_repository=MagicMock(spec=LogLineRepository),
+        template_repository=MagicMock(spec=TemplateRepository),
+    )
+
+    with patch("app.integrations.twilio_adapter.TwilioAdapter") as mock_adapter_cls:
+        await processor._save_recording_locally(mock_task)
+
+    mock_adapter_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_save_recording_locally_skips_when_already_saved(mock_task: Task) -> None:
+    """_save_recording_locally: if local_recording_path is set, skip re-download."""
+    from app.modules.notifications.post_call import PostCallProcessor
+
+    already_saved = MagicMock()
+    already_saved.recording_uri = "https://api.twilio.com/rec.wav"
+    already_saved.local_recording_path = "/tmp/recordings/task_1.mp3"
+
+    mock_call_session_repo = MagicMock(spec=CallSessionRepository)
+    mock_call_session_repo.get_by_task_id = AsyncMock(return_value=already_saved)
+
+    processor = PostCallProcessor(
+        task_repository=MagicMock(spec=TaskRepository),
+        user_repository=MagicMock(spec=UserRepository),
+        call_session_repository=mock_call_session_repo,
+        log_line_repository=MagicMock(spec=LogLineRepository),
+        template_repository=MagicMock(spec=TemplateRepository),
+    )
+
+    with patch("app.integrations.twilio_adapter.TwilioAdapter") as mock_adapter_cls:
+        await processor._save_recording_locally(mock_task)
+
+    mock_adapter_cls.assert_not_called()

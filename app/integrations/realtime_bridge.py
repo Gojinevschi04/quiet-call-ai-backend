@@ -29,6 +29,7 @@ IDLE_TIMEOUT_SECONDS = 10.0
 MAX_SILENCE_NUDGES = 3
 HANGUP_DRAIN_TIMEOUT_SECONDS = 15.0
 HANGUP_POST_DRAIN_BUFFER_SECONDS = 1.0
+HANGUP_BACKUP_TIMEOUT_SECONDS = 30.0
 MARK_DRAIN_POLL_INTERVAL_SECONDS = 0.2
 AUDIO_CHUNK_LOG_THRESHOLDS = (1, 50, 250, 500)
 TRANSCRIPT_LOG_MAX_CHARS = 200
@@ -106,6 +107,8 @@ class RealtimeBridge:
         self._twilio_chunks_received: int = 0
         self._openai_chunks_sent: int = 0
         self._hangup_pending: bool = False
+        self._hangup_done: bool = False
+        self._backup_hangup_task: asyncio.Task | None = None
 
         self._idle_timer: asyncio.Task | None = None
         self._silence_nudges: int = 0
@@ -443,6 +446,12 @@ class RealtimeBridge:
             arguments = {}
 
         if name == "report_outcome":
+            if self.outcome is not None:
+                logger.info(
+                    "[task=%d] Ignoring duplicate report_outcome call (already %s)",
+                    self.task_id, self.outcome,
+                )
+                return
             self.outcome = {
                 "status": arguments.get("status", "failed"),
                 "reason": arguments.get("reason", ""),
@@ -462,6 +471,7 @@ class RealtimeBridge:
                 )
             )
             self._hangup_pending = True
+            self._schedule_backup_hangup()
             lang_name = LANG_DISPLAY_NAMES.get(self.language, "English")
             await self.openai_ws.send(
                 json.dumps(
@@ -514,6 +524,7 @@ class RealtimeBridge:
                 "reason": "No response from the interlocutor after multiple attempts.",
             }
             self._hangup_pending = True
+            self._schedule_backup_hangup()
             await self.openai_ws.send(
                 json.dumps(
                     {
@@ -580,6 +591,7 @@ class RealtimeBridge:
             "reason": f"Max call duration exceeded ({settings.MAX_CALL_DURATION_SECONDS}s)",
         }
         self._hangup_pending = True
+        self._schedule_backup_hangup()
 
         lang_name = LANG_DISPLAY_NAMES.get(self.language, "English")
         farewell = MAX_DURATION_FAREWELL_PHRASES.get(
@@ -606,15 +618,42 @@ class RealtimeBridge:
         while self.mark_queue and loop.time() < deadline:  # noqa: ASYNC110
             await asyncio.sleep(MARK_DRAIN_POLL_INTERVAL_SECONDS)
         await asyncio.sleep(HANGUP_POST_DRAIN_BUFFER_SECONDS)
+        await self._force_hangup(source="drain")
 
+    async def _force_hangup(self, source: str) -> None:
+        """Idempotent hangup — safe to call from both drain path and backup timer."""
+        if self._hangup_done:
+            return
+        self._hangup_done = True
         if not self.call_sid:
             logger.warning("[task=%d] Cannot hang up: call_sid unknown", self.task_id)
             return
         try:
             await TwilioAdapter().hangup(self.call_sid)
-            logger.info("[task=%d] Twilio call hung up after farewell", self.task_id)
+            logger.info("[task=%d] Twilio call hung up (via %s)", self.task_id, source)
         except Exception:
             logger.exception("[task=%d] Failed to hang up Twilio call", self.task_id)
+
+    def _schedule_backup_hangup(self) -> None:
+        """Fallback timer: if the drain path never runs (OpenAI WS closed before
+        farewell audio done), force-hang up after HANGUP_BACKUP_TIMEOUT_SECONDS.
+
+        Idempotent with the normal drain hangup — whichever runs first wins via
+        `_hangup_done`.
+        """
+        if self._backup_hangup_task is not None:
+            return
+
+        async def _backup_hangup() -> None:
+            await asyncio.sleep(HANGUP_BACKUP_TIMEOUT_SECONDS)
+            if not self._hangup_done:
+                logger.warning(
+                    "[task=%d] Backup hangup fired — drain path did not complete",
+                    self.task_id,
+                )
+                await self._force_hangup(source="backup timer")
+
+        self._backup_hangup_task = asyncio.create_task(_backup_hangup())
 
     def _accumulate_token_usage(self, usage: dict[str, Any]) -> None:
         """Add usage from one response.done event to the running totals.

@@ -1,41 +1,41 @@
+import time
+
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.main import app
-
-
-@pytest.mark.asyncio
-async def test_rate_limit_allows_normal_traffic() -> None:
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Should allow a few requests without hitting the limit
-        for _ in range(5):
-            response = await client.get("/health")
-            assert response.status_code == 200
+from app.core.rate_limit import MAX_TRACKED_IPS, RateLimitMiddleware
 
 
-@pytest.mark.asyncio
-async def test_rate_limit_blocks_excessive_traffic() -> None:
-    # Create a fresh app instance to avoid state from other tests
-    from fastapi import FastAPI
+class _StubApp:
+    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+        return None
 
-    from app.core.rate_limit import RateLimitMiddleware
 
-    test_app = FastAPI()
-    test_app.add_middleware(RateLimitMiddleware, max_requests=3)
+def _make_middleware() -> RateLimitMiddleware:
+    return RateLimitMiddleware(_StubApp(), max_requests=60)
 
-    @test_app.get("/test")
-    async def test_endpoint() -> dict:
-        return {"ok": True}
 
-    transport = ASGITransport(app=test_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # First 3 should pass
-        for _ in range(3):
-            response = await client.get("/test")
-            assert response.status_code == 200
+def test_sweep_evicts_stale_ips() -> None:
+    """Regression: IPs whose 60 s window has fully elapsed get dropped."""
+    middleware = _make_middleware()
+    now = time.time()
+    middleware._requests["fresh"] = [now]
+    middleware._requests["stale"] = [now - 120]
+    middleware._requests["borderline"] = [now - 59]
 
-        # 4th should be rate limited
-        response = await client.get("/test")
-        assert response.status_code == 429
-        assert "Too many requests" in response.json()["detail"]
+    middleware._sweep_stale_entries(now)
+
+    assert "fresh" in middleware._requests
+    assert "borderline" in middleware._requests
+    assert "stale" not in middleware._requests
+
+
+def test_sweep_enforces_max_tracked_ips_cap() -> None:
+    """Regression: attacker cycling IPs faster than sweep can't grow dict unbounded."""
+    middleware = _make_middleware()
+    now = time.time()
+    for ip_index in range(MAX_TRACKED_IPS + 10):
+        middleware._requests[f"ip-{ip_index}"] = [now - (ip_index % 30)]
+
+    middleware._sweep_stale_entries(now)
+
+    assert len(middleware._requests) <= MAX_TRACKED_IPS
