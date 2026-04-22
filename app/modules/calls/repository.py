@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlmodel import func, select
 
@@ -31,7 +32,7 @@ class CallSessionRepository(Repository):
         return result.one()
 
     async def get_usage_for_user(self, user_id: int) -> dict[str, int]:
-        """Sum token counts across all call sessions owned by a user (via their tasks)."""
+        """Sum token counts + call duration across all call sessions owned by a user (via their tasks)."""
         from app.modules.tasks.models import Task
 
         result = await self._session.exec(
@@ -41,19 +42,52 @@ class CallSessionRepository(Repository):
                 func.coalesce(func.sum(CallSession.input_text_tokens), 0),
                 func.coalesce(func.sum(CallSession.output_text_tokens), 0),
                 func.count(CallSession.id),
+                func.coalesce(func.sum(CallSession.duration), 0),
             )
             .select_from(CallSession)
             .join(Task, Task.id == CallSession.task_id)
             .where(Task.user_id == user_id)
         )
-        input_audio, output_audio, input_text, output_text, call_count = result.one()
+        input_audio, output_audio, input_text, output_text, call_count, duration_sec = result.one()
         return {
-            "input_audio_tokens": input_audio,
-            "output_audio_tokens": output_audio,
-            "input_text_tokens": input_text,
-            "output_text_tokens": output_text,
-            "call_count": call_count,
+            "input_audio_tokens": int(input_audio),
+            "output_audio_tokens": int(output_audio),
+            "input_text_tokens": int(input_text),
+            "output_text_tokens": int(output_text),
+            "call_count": int(call_count),
+            "duration_seconds": int(duration_sec),
         }
+
+    async def get_monthly_usage_per_user(
+        self, since: datetime
+    ) -> Sequence[tuple[int, str, int, int, int, int, int, int]]:
+        """Aggregate per-user call stats since a given datetime.
+
+        Returns rows of (user_id, user_email, call_count, total_duration_sec,
+        input_audio, output_audio, input_text, output_text).
+        """
+        from app.modules.tasks.models import Task
+        from app.modules.users.models import User
+
+        result = await self._session.exec(
+            select(
+                User.id,
+                User.email,
+                func.count(CallSession.id),
+                func.coalesce(func.sum(CallSession.duration), 0),
+                func.coalesce(func.sum(CallSession.input_audio_tokens), 0),
+                func.coalesce(func.sum(CallSession.output_audio_tokens), 0),
+                func.coalesce(func.sum(CallSession.input_text_tokens), 0),
+                func.coalesce(func.sum(CallSession.output_text_tokens), 0),
+            )
+            .select_from(CallSession)
+            .join(Task, Task.id == CallSession.task_id)
+            .join(User, User.id == Task.user_id)
+            .where(CallSession.created_at >= since)
+            .group_by(User.id, User.email)
+            .order_by(func.coalesce(func.sum(CallSession.duration), 0).desc())
+        )
+        return result.all()
 
 
 class LogLineRepository(Repository):

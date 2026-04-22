@@ -279,6 +279,7 @@ async def test_get_usage_returns_aggregated_cost() -> None:
             "input_text_tokens": 1_000_000,
             "output_text_tokens": 1_000_000,
             "call_count": 7,
+            "duration_seconds": 600,
         }
     )
 
@@ -290,7 +291,11 @@ async def test_get_usage_returns_aggregated_cost() -> None:
     assert response.output_audio_tokens == 1_000_000
     assert response.input_text_tokens == 1_000_000
     assert response.output_text_tokens == 1_000_000
-    assert response.estimated_cost_usd == 32.0 + 64.0 + 4.0 + 16.0
+    assert response.duration_seconds == 600
+    assert response.openai_cost_usd == 32.0 + 64.0 + 4.0 + 16.0
+    # 600 sec = 10 min × ($0.30 + $0.004) = $3.04
+    assert response.twilio_cost_usd == pytest.approx(3.04, abs=0.001)
+    assert response.estimated_cost_usd == pytest.approx(116.0 + 3.04, abs=0.001)
 
 
 @pytest.mark.asyncio
@@ -304,6 +309,7 @@ async def test_get_usage_zero_calls_returns_zero_cost() -> None:
             "input_text_tokens": 0,
             "output_text_tokens": 0,
             "call_count": 0,
+            "duration_seconds": 0,
         }
     )
 
@@ -312,3 +318,5 @@ async def test_get_usage_zero_calls_returns_zero_cost() -> None:
 
     assert response.call_count == 0
     assert response.estimated_cost_usd == 0.0
+    assert response.twilio_cost_usd == 0.0
+    assert response.openai_cost_usd == 0.0

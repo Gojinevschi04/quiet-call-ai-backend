@@ -31,11 +31,17 @@ class TaskService:
         self.task_repository = task_repository
         self.template_repository = template_repository
 
-    async def create_task(self, data: TaskCreate, user_id: int, is_admin: bool = False) -> Task:
+    async def create_task(
+        self,
+        data: TaskCreate,
+        user_id: int,
+        is_admin: bool = False,
+        allow_inactive_template: bool = False,
+    ) -> Task:
         template = await self.template_repository.get_by_id(data.template_id)
         if not template:
             raise TemplateNotFoundError(f"Template with id {data.template_id} not found")
-        if not template.is_active:
+        if not template.is_active and not allow_inactive_template:
             raise TemplateNotFoundError(
                 f"Template with id {data.template_id} is deactivated and cannot be used"
             )

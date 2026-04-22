@@ -29,6 +29,14 @@ async def get_admin_extended_stats_view(
     return await admin_service.get_extended_stats()
 
 
+@router.get("/stats/costs")
+async def get_admin_cost_breakdown_view(
+    admin_service: Annotated[AdminService, Depends(AdminService)],
+    _current_user: Annotated[User, Depends(get_current_admin_user)],
+) -> dict:
+    return await admin_service.get_cost_breakdown()
+
+
 @router.get("/users")
 async def get_admin_users_view(
     admin_service: Annotated[AdminService, Depends(AdminService)],

@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends
@@ -6,6 +7,12 @@ from sqlmodel import func, select
 
 from app.core.logging import get_logger
 from app.modules.calls.models import CallSession, LogLine
+from app.modules.calls.pricing import (
+    COST_DECIMAL_PLACES,
+    SECONDS_PER_MINUTE,
+    estimate_cost_usd,
+    estimate_twilio_cost_usd,
+)
 from app.modules.calls.repository import CallSessionRepository
 from app.modules.tasks.models import Task
 from app.modules.tasks.repository import TaskRepository
@@ -118,6 +125,58 @@ class AdminService:
             "tasks_per_day": tasks_per_day,
             "users_per_month": users_per_month,
             "success_rate_per_template": success_rate_per_template,
+        }
+
+    async def get_cost_breakdown(self) -> dict:
+        """Per-user + totals cost breakdown for the current calendar month.
+
+        Returns Twilio + OpenAI estimated USD cost per user, total minutes, and
+        the aggregate $/min across all calls.
+        """
+        now = datetime.now()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        rows = await self.call_session_repository.get_monthly_usage_per_user(month_start)
+
+        per_user_breakdown = []
+        total_duration_seconds = 0
+        total_cost_usd = 0.0
+        for row in rows:
+            user_id, email, call_count, duration_seconds, input_audio_tokens, output_audio_tokens, \
+                input_text_tokens, output_text_tokens = row
+            duration_seconds = int(duration_seconds or 0)
+            input_audio_tokens = int(input_audio_tokens or 0)
+            output_audio_tokens = int(output_audio_tokens or 0)
+            input_text_tokens = int(input_text_tokens or 0)
+            output_text_tokens = int(output_text_tokens or 0)
+            twilio_cost = estimate_twilio_cost_usd(duration_seconds)
+            openai_cost = estimate_cost_usd(
+                input_audio_tokens, output_audio_tokens, input_text_tokens, output_text_tokens
+            )
+            entry_total_cost = round(twilio_cost + openai_cost, COST_DECIMAL_PLACES)
+            per_user_breakdown.append(
+                {
+                    "user_id": user_id,
+                    "email": email,
+                    "call_count": int(call_count),
+                    "duration_seconds": duration_seconds,
+                    "twilio_cost_usd": twilio_cost,
+                    "openai_cost_usd": openai_cost,
+                    "total_cost_usd": entry_total_cost,
+                }
+            )
+            total_duration_seconds += duration_seconds
+            total_cost_usd += entry_total_cost
+
+        total_minutes = total_duration_seconds / SECONDS_PER_MINUTE if total_duration_seconds else 0
+        avg_cost_per_min_usd = (
+            round(total_cost_usd / total_minutes, COST_DECIMAL_PLACES) if total_minutes else 0.0
+        )
+        return {
+            "period_start": month_start.isoformat(),
+            "per_user": per_user_breakdown,
+            "total_cost_usd": round(total_cost_usd, COST_DECIMAL_PLACES),
+            "total_minutes": round(total_minutes, 2),
+            "avg_cost_per_min_usd": avg_cost_per_min_usd,
         }
 
     async def get_all_users(self, limit: int = 50, offset: int = 0) -> tuple[Sequence[User], int]:

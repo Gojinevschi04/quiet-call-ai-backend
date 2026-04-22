@@ -298,6 +298,7 @@ async def duplicate_task_view(
             new_task_data,
             current_user.id,
             is_admin=is_admin,
+            allow_inactive_template=True,
         )
     except InvalidTaskDataError as e:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(e)) from e

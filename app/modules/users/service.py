@@ -5,7 +5,7 @@ from fastapi import Depends
 
 from app.core.logging import get_logger
 from app.modules.auth.service import AuthService
-from app.modules.calls.pricing import estimate_cost_usd
+from app.modules.calls.pricing import estimate_cost_usd, estimate_twilio_cost_usd
 from app.modules.calls.repository import CallSessionRepository
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
@@ -34,19 +34,23 @@ class UserService:
 
     async def get_usage(self, user_id: int) -> UserUsageResponse:
         totals = await self.call_session_repository.get_usage_for_user(user_id)
-        estimated_cost = estimate_cost_usd(
+        openai_cost = estimate_cost_usd(
             totals["input_audio_tokens"],
             totals["output_audio_tokens"],
             totals["input_text_tokens"],
             totals["output_text_tokens"],
         )
+        twilio_cost = estimate_twilio_cost_usd(totals["duration_seconds"])
         return UserUsageResponse(
             call_count=totals["call_count"],
             input_audio_tokens=totals["input_audio_tokens"],
             output_audio_tokens=totals["output_audio_tokens"],
             input_text_tokens=totals["input_text_tokens"],
             output_text_tokens=totals["output_text_tokens"],
-            estimated_cost_usd=estimated_cost,
+            duration_seconds=totals["duration_seconds"],
+            twilio_cost_usd=twilio_cost,
+            openai_cost_usd=openai_cost,
+            estimated_cost_usd=round(twilio_cost + openai_cost, 4),
         )
 
     def _to_response(self, user: User) -> UserResponse:

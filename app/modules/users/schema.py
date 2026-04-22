@@ -157,13 +157,16 @@ class ProfileUpdate(BaseModel):
 
 
 class UserUsageResponse(BaseModel):
-    """Aggregate OpenAI Realtime token usage + estimated cost for a user's calls."""
+    """Aggregate token usage, call duration, and estimated cost for a user's calls."""
 
     call_count: int
     input_audio_tokens: int
     output_audio_tokens: int
     input_text_tokens: int
     output_text_tokens: int
+    duration_seconds: int = 0
+    twilio_cost_usd: float = 0.0
+    openai_cost_usd: float = 0.0
     estimated_cost_usd: float
 
 
