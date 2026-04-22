@@ -214,6 +214,89 @@ RU_TEMPLATES = [
             "service_type",
         ],
     },
+    {
+        "name": "Последующий звонок",
+        "language": "ru",
+        "base_script": (
+            "Вы перезваниваете по предыдущему обращению. "
+            "Поздоровайтесь, назовите имя и номер обращения. "
+            "Спросите текущий статус или обновления. "
+            "Уточните какие действия необходимы. Поблагодарите и попрощайтесь."
+        ),
+        "required_slots": ["reference_number", "contact_name", "follow_up_topic"],
+    },
+    {
+        "name": "Проверка статуса заказа",
+        "language": "ru",
+        "base_script": (
+            "Вам нужно узнать статус заказа. "
+            "Поздоровайтесь, назовите имя и номер заказа. "
+            "Спросите обрабатывается ли, отправлен или доставлен. "
+            "Если отправлен, спросите ожидаемую дату доставки. "
+            "Запишите детали и попрощайтесь."
+        ),
+        "required_slots": ["order_number", "customer_name"],
+    },
+    {
+        "name": "Подача жалобы",
+        "language": "ru",
+        "base_script": (
+            "Вам нужно сообщить о проблеме. "
+            "Поздоровайтесь, назовите имя и чётко опишите ситуацию. "
+            "Попросите номер обращения. "
+            "Уточните сроки рассмотрения. "
+            "Подтвердите что жалоба зарегистрирована и попрощайтесь."
+        ),
+        "required_slots": ["complaint_subject", "complaint_details", "customer_name"],
+    },
+    {
+        "name": "Запрос повтора рецепта",
+        "language": "ru",
+        "base_script": (
+            "Вам нужно повторить рецепт. "
+            "Поздоровайтесь, назовите имя и номер рецепта. "
+            "Спросите можно ли оформить повтор и когда он будет готов. "
+            "Если рецепт истёк, уточните что нужно сделать. "
+            "Подтвердите детали получения и попрощайтесь."
+        ),
+        "required_slots": ["patient_name", "prescription_number", "pharmacy_name"],
+    },
+    {
+        "name": "Сообщение о сбое услуги",
+        "language": "ru",
+        "base_script": (
+            "Вам нужно сообщить о сбое услуги. "
+            "Поздоровайтесь, назовите имя и номер лицевого счёта, опишите проблему. "
+            "Спросите есть ли известный сбой в вашем районе. "
+            "Если нет, попросите номер заявки и ожидаемое время восстановления. "
+            "Попрощайтесь."
+        ),
+        "required_slots": ["account_number", "service_type", "issue_description", "customer_name"],
+    },
+    {
+        "name": "Запрос по страховому случаю",
+        "language": "ru",
+        "base_script": (
+            "Вам нужно узнать статус страхового случая. "
+            "Поздоровайтесь, назовите имя и номер дела. "
+            "Спросите на рассмотрении ли, одобрен или отклонён. "
+            "Если одобрен, уточните сроки выплаты. Если нет — что нужно предоставить. "
+            "Подтвердите дальнейшие шаги и попрощайтесь."
+        ),
+        "required_slots": ["claim_number", "policyholder_name", "claim_type"],
+    },
+    {
+        "name": "Напоминание о платеже",
+        "language": "ru",
+        "base_script": (
+            "Вы звоните по поводу ожидаемого платежа. "
+            "Поздоровайтесь, назовите компанию и укажите номер счёта и сумму. "
+            "Вежливо спросите был ли платёж произведён или когда ожидается. "
+            "Если оплачен — попросите референс транзакции. Если нет — уточните способы оплаты и крайний срок. "
+            "Поблагодарите и попрощайтесь."
+        ),
+        "required_slots": ["invoice_number", "amount_due", "due_date", "company_name"],
+    },
 ]
 
 RO_TEMPLATES = [
@@ -280,6 +363,89 @@ RO_TEMPLATES = [
             "booked_name",
             "service_type",
         ],
+    },
+    {
+        "name": "Apel de revenire",
+        "language": "ro",
+        "base_script": (
+            "Revii asupra unei interacțiuni anterioare. "
+            "Salută, spune-ți numele și numărul de referință. "
+            "Întreabă de statusul curent sau de noutăți pe subiect. "
+            "Notează ce acțiuni sunt necesare. Mulțumește și ia-ți la revedere."
+        ),
+        "required_slots": ["reference_number", "contact_name", "follow_up_topic"],
+    },
+    {
+        "name": "Verificare status comandă",
+        "language": "ro",
+        "base_script": (
+            "Trebuie să afli statusul comenzii. "
+            "Salută, spune-ți numele și numărul comenzii. "
+            "Întreabă dacă e în procesare, expediată sau livrată. "
+            "Dacă e expediată, cere data estimativă de livrare. "
+            "Notează detaliile și ia-ți la revedere."
+        ),
+        "required_slots": ["order_number", "customer_name"],
+    },
+    {
+        "name": "Depunere plângere",
+        "language": "ro",
+        "base_script": (
+            "Trebuie să raportezi o problemă. "
+            "Salută, spune-ți numele și descrie clar situația. "
+            "Cere un număr de referință pentru plângere. "
+            "Întreabă despre termenul estimat de soluționare. "
+            "Confirmă că plângerea e înregistrată și ia-ți la revedere."
+        ),
+        "required_slots": ["complaint_subject", "complaint_details", "customer_name"],
+    },
+    {
+        "name": "Cerere rețetă",
+        "language": "ro",
+        "base_script": (
+            "Trebuie să reînnoiești o rețetă. "
+            "Salută, spune-ți numele și numărul rețetei. "
+            "Întreabă dacă poate fi procesată reînnoirea și când va fi gata. "
+            "Dacă rețeta a expirat, întreabă ce pași sunt necesari. "
+            "Confirmă detaliile de ridicare și ia-ți la revedere."
+        ),
+        "required_slots": ["patient_name", "prescription_number", "pharmacy_name"],
+    },
+    {
+        "name": "Raportare întrerupere serviciu",
+        "language": "ro",
+        "base_script": (
+            "Trebuie să raportezi o întrerupere a serviciului. "
+            "Salută, spune-ți numele și numărul de client, descrie problema. "
+            "Întreabă dacă există o întrerupere cunoscută în zonă. "
+            "Dacă nu, cere un număr de sesizare și timpul estimat de restaurare. "
+            "Ia-ți la revedere."
+        ),
+        "required_slots": ["account_number", "service_type", "issue_description", "customer_name"],
+    },
+    {
+        "name": "Întrebare dosar asigurare",
+        "language": "ro",
+        "base_script": (
+            "Trebuie să afli statusul unui dosar de asigurare. "
+            "Salută, spune-ți numele și numărul dosarului. "
+            "Întreabă dacă e în evaluare, aprobat sau respins. "
+            "Dacă e aprobat, întreabă termenul plății. Dacă nu, ce e necesar suplimentar. "
+            "Confirmă pașii următori și ia-ți la revedere."
+        ),
+        "required_slots": ["claim_number", "policyholder_name", "claim_type"],
+    },
+    {
+        "name": "Reamintire plată",
+        "language": "ro",
+        "base_script": (
+            "Suni pentru o plată în așteptare. "
+            "Salută, spune numele firmei și fă referire la numărul facturii și suma. "
+            "Întreabă politicos dacă plata a fost efectuată sau când e așteptată. "
+            "Dacă e plătită, cere referința tranzacției. Dacă nu, confirmă metodele de plată și termenul. "
+            "Mulțumește și ia-ți la revedere."
+        ),
+        "required_slots": ["invoice_number", "amount_due", "due_date", "company_name"],
     },
 ]
 

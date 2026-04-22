@@ -409,7 +409,7 @@ async def seed_tasks(session: AsyncSession, users: dict[str, int]) -> list[Task]
         },
         {
             "phone": "+37322701000",
-            "status": TaskStatus.IN_PROGRESS,
+            "status": TaskStatus.PENDING,
             "tpl": "Make appointment",
             "user": "elena@example.com",
             "slots": {
@@ -536,6 +536,185 @@ async def seed_tasks(session: AsyncSession, users: dict[str, int]) -> list[Task]
             },
             "summary": "Demo meeting scheduled with client at HQ, March 14 at 10 AM.",
             "ago_days": 6,
+        },
+        # --- Extra Ana tasks (mostly RO, a few EN, 1 RU) — ready to simulate ---
+        {
+            "phone": "+37322801010",
+            "status": TaskStatus.PENDING,
+            "tpl": "Programare la medic",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "preferred_date": "2026-04-28",
+                "preferred_time": "10:30",
+                "service_type": "consultație stomatologică",
+                "patient_name": "Ana Gojinevschi",
+            },
+            "ago_hours": 1,
+        },
+        {
+            "phone": "+37322801011",
+            "status": TaskStatus.PENDING,
+            "tpl": "Confirmare rezervare",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "reservation_id": "REZ-2026-4410",
+                "reservation_date": "2026-04-30",
+                "guest_name": "Ana Gojinevschi",
+            },
+            "ago_hours": 2,
+        },
+        {
+            "phone": "+37322801012",
+            "status": TaskStatus.PENDING,
+            "tpl": "Solicitare informații",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "question_topic": "prețul unui abonament lunar",
+                "business_name": "FitLife Chișinău",
+            },
+            "ago_hours": 3,
+        },
+        {
+            "phone": "+37322801013",
+            "status": TaskStatus.PENDING,
+            "tpl": "Anulare programare",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "appointment_date": "2026-04-25",
+                "appointment_time": "15:00",
+                "booked_name": "Ana Gojinevschi",
+                "reason": "conflict de program",
+            },
+            "ago_hours": 4,
+        },
+        {
+            "phone": "+37322801014",
+            "status": TaskStatus.PENDING,
+            "tpl": "Reprogramare programare",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "original_date": "2026-04-29",
+                "original_time": "11:00",
+                "new_preferred_date": "2026-05-03",
+                "new_preferred_time": "14:00",
+                "booked_name": "Ana Gojinevschi",
+                "service_type": "control cardiologic",
+            },
+            "ago_hours": 5,
+        },
+        {
+            "phone": "+37322801015",
+            "status": TaskStatus.SCHEDULED,
+            "tpl": "Reamintire plată",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "invoice_number": "FAC-2026-0310",
+                "amount_due": "1800 MDL",
+                "due_date": "2026-05-01",
+                "company_name": "Atelier Design SRL",
+            },
+            "scheduled_future_days": 1,
+        },
+        {
+            "phone": "+37322801016",
+            "status": TaskStatus.SCHEDULED,
+            "tpl": "Apel de revenire",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "reference_number": "TCK-99012",
+                "contact_name": "Moldcell Support",
+                "follow_up_topic": "migrare abonament business",
+            },
+            "scheduled_future_days": 2,
+        },
+        {
+            "phone": "+37322801017",
+            "status": TaskStatus.COMPLETED,
+            "tpl": "Programare la medic",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "preferred_date": "2026-04-10",
+                "preferred_time": "09:30",
+                "service_type": "control oftalmologic",
+                "patient_name": "Ana Gojinevschi",
+            },
+            "ago_days": 12,
+        },
+        {
+            "phone": "+37322801018",
+            "status": TaskStatus.COMPLETED,
+            "tpl": "Confirmare rezervare",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "reservation_id": "REZ-2026-3390",
+                "reservation_date": "2026-04-12",
+                "guest_name": "Ana G.",
+            },
+            "ago_days": 10,
+        },
+        {
+            "phone": "+37322801019",
+            "status": TaskStatus.FAILED,
+            "tpl": "Anulare programare",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "appointment_date": "2026-04-05",
+                "appointment_time": "16:00",
+                "booked_name": "Ana Gojinevschi",
+                "reason": "indisponibilitate",
+            },
+            "error": "Wrong number — person on line not familiar with the booking.",
+            "ago_days": 15,
+        },
+        {
+            "phone": "+37322801020",
+            "status": TaskStatus.PENDING,
+            "tpl": "Make appointment",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "preferred_date": "2026-04-26",
+                "preferred_time": "11:00",
+                "service_type": "physiotherapy",
+                "patient_name": "Ana G.",
+            },
+            "ago_hours": 6,
+        },
+        {
+            "phone": "+37322801021",
+            "status": TaskStatus.PENDING,
+            "tpl": "Follow-up call",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "reference_number": "ORD-91240",
+                "contact_name": "DHL Moldova",
+                "follow_up_topic": "parcel delivery status",
+            },
+            "ago_hours": 7,
+        },
+        {
+            "phone": "+37322801022",
+            "status": TaskStatus.COMPLETED,
+            "tpl": "Prescription refill request",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "patient_name": "Ana Gojinevschi",
+                "prescription_number": "RX-771204",
+                "pharmacy_name": "Farmacia Familiei",
+            },
+            "ago_days": 5,
+        },
+        {
+            "phone": "+37322801023",
+            "status": TaskStatus.PENDING,
+            "tpl": "Запись на приём",
+            "user": "ana.gojinevschi@isa.utm.md",
+            "slots": {
+                "preferred_date": "2026-04-27",
+                "preferred_time": "14:00",
+                "service_type": "консультация терапевта",
+                "patient_name": "Анна Г.",
+            },
+            "ago_hours": 8,
         },
         # --- Days 25-29 ago (light activity, mostly completed) ---
         {
@@ -884,7 +1063,7 @@ async def seed_tasks(session: AsyncSession, users: dict[str, int]) -> list[Task]
         },
         {
             "phone": "+37322800220",
-            "status": TaskStatus.IN_PROGRESS,
+            "status": TaskStatus.PENDING,
             "tpl": "Make appointment",
             "user": "natalia@example.com",
             "slots": {
@@ -1178,6 +1357,7 @@ async def seed_tasks(session: AsyncSession, users: dict[str, int]) -> list[Task]
             days=task_data.get("ago_days", 0),
             hours=task_data.get("ago_hours", 0),
         )
+        generated_summary = _generate_summary(task_data["tpl"], task_data["status"], task_data["slots"])
         task = Task(
             target_phone=task_data["phone"],
             status=task_data["status"],
@@ -1189,7 +1369,7 @@ async def seed_tasks(session: AsyncSession, users: dict[str, int]) -> list[Task]
                 if "scheduled_future_days" in task_data
                 else None
             ),
-            summary=task_data.get("summary"),
+            summary=generated_summary or task_data.get("summary"),
             error_reason=task_data.get("error"),
             created_at=task_created_at,
             updated_at=task_created_at,
@@ -1203,11 +1383,120 @@ async def seed_tasks(session: AsyncSession, users: dict[str, int]) -> list[Task]
     return created_task_ids
 
 
+class _SlotDict(dict):
+    """dict that renders missing keys as an empty string — safe for text.format_map."""
+
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def _render_transcript(lines: list[dict], slot_data: dict) -> list[dict]:
+    """Fill {placeholder} fields in each line's text from slot_data, safely."""
+    rendered: list[dict] = []
+    for line in lines:
+        rendered_text = line["text"].format_map(_SlotDict(slot_data))
+        rendered.append({**line, "text": rendered_text})
+    return rendered
+
+
+SUMMARY_TEMPLATES: dict[tuple[str, bool], str] = {
+    ("Make appointment", True): (
+        "Appointment confirmed for {patient_name} — {service_type} on {preferred_date} at {preferred_time}."
+    ),
+    ("Make appointment", False): "Could not schedule {service_type} for {patient_name} on {preferred_date}.",
+    ("Confirm reservation", True): "Reservation {reservation_id} confirmed for {guest_name} on {reservation_date}.",
+    ("Confirm reservation", False): "Reservation {reservation_id} for {guest_name} could not be confirmed.",
+    ("Cancel appointment", True): (
+        "Appointment on {appointment_date} at {appointment_time} for {booked_name} cancelled. Reason: {reason}."
+    ),
+    ("Cancel appointment", False): "Could not cancel appointment for {booked_name} on {appointment_date}.",
+    ("Reschedule appointment", True): (
+        "Appointment for {booked_name} ({service_type}) moved from {original_date} {original_time} "
+        "to {new_preferred_date} {new_preferred_time}."
+    ),
+    ("Reschedule appointment", False): "Could not reschedule appointment for {booked_name}.",
+    ("Follow-up call", True): "Follow-up on {follow_up_topic} (ref {reference_number}) completed with {contact_name}.",
+    ("Follow-up call", False): "Follow-up on {follow_up_topic} — no response from {contact_name}.",
+    ("Request information", True): "Information about {question_topic} obtained from {business_name}.",
+    ("Request information", False): "Could not obtain information about {question_topic} from {business_name}.",
+    ("Order status check", True): "Status for order {order_number} ({customer_name}) checked.",
+    ("Order status check", False): "Could not check status for order {order_number}.",
+    ("File a complaint", True): "Complaint registered: {complaint_subject} for {customer_name}.",
+    ("File a complaint", False): "Complaint {complaint_subject} could not be filed.",
+    ("Prescription refill request", True): (
+        "Prescription {prescription_number} refill requested for {patient_name} at {pharmacy_name}."
+    ),
+    ("Prescription refill request", False): (
+        "Prescription {prescription_number} refill could not be processed at {pharmacy_name}."
+    ),
+    ("Service outage report", True): "Outage reported for account {account_number} ({service_type}). Ticket opened.",
+    ("Service outage report", False): "Outage for account {account_number} could not be reported.",
+    ("Insurance claim inquiry", True): (
+        "Claim {claim_number} ({claim_type}) for {policyholder_name} — status checked."
+    ),
+    ("Insurance claim inquiry", False): "Could not check status for claim {claim_number}.",
+    ("Payment reminder", True): (
+        "Payment reminder delivered: invoice {invoice_number} ({amount_due}) due {due_date} from {company_name}."
+    ),
+    ("Payment reminder", False): "Payment reminder for invoice {invoice_number} could not be delivered.",
+    # RO
+    ("Programare la medic", True): (
+        "Programare confirmată pentru {patient_name} — {service_type} pe {preferred_date} la {preferred_time}."
+    ),
+    ("Programare la medic", False): "Programarea {service_type} pentru {patient_name} nu a putut fi făcută pe {preferred_date}.",
+    ("Confirmare rezervare", True): "Rezervarea {reservation_id} confirmată pentru {guest_name} pe {reservation_date}.",
+    ("Confirmare rezervare", False): "Rezervarea {reservation_id} pentru {guest_name} nu a putut fi confirmată.",
+    ("Anulare programare", True): (
+        "Programarea din {appointment_date} la ora {appointment_time} pentru {booked_name} a fost anulată. "
+        "Motiv: {reason}."
+    ),
+    ("Anulare programare", False): "Programarea pentru {booked_name} din {appointment_date} nu a putut fi anulată.",
+    ("Reprogramare programare", True): (
+        "Programarea lui {booked_name} ({service_type}) mutată din {original_date} {original_time} "
+        "în {new_preferred_date} {new_preferred_time}."
+    ),
+    ("Reprogramare programare", False): "Programarea lui {booked_name} nu a putut fi reprogramată.",
+    ("Solicitare informații", True): "Informații despre {question_topic} obținute de la {business_name}.",
+    ("Solicitare informații", False): "Informațiile despre {question_topic} nu au putut fi obținute de la {business_name}.",
+    ("Apel de revenire", True): (
+        "Revenire pe {follow_up_topic} (ref {reference_number}) — finalizată cu {contact_name}."
+    ),
+    ("Apel de revenire", False): "Revenirea pentru {follow_up_topic} — fără răspuns de la {contact_name}.",
+    ("Verificare status comandă", True): "Statusul comenzii {order_number} pentru {customer_name} verificat.",
+    ("Verificare status comandă", False): "Statusul comenzii {order_number} nu a putut fi verificat.",
+    ("Reamintire plată", True): (
+        "Reamintire de plată trimisă: factura {invoice_number} ({amount_due}) "
+        "scadentă pe {due_date} de la {company_name}."
+    ),
+    ("Reamintire plată", False): "Reamintirea pentru factura {invoice_number} nu a putut fi livrată.",
+    # RU
+    ("Запись на приём", True): (
+        "Приём подтверждён для {patient_name} — {service_type} на {preferred_date} в {preferred_time}."
+    ),
+    ("Запись на приём", False): "Не удалось записать {patient_name} на {preferred_date}.",
+}
+
+
+def _generate_summary(template_name: str, status: str, slots: dict) -> str | None:
+    """Derive a summary string from a per-template pattern + slot_data.
+
+    Returns None for tasks whose status is not terminal, or for templates without
+    a mapped pattern (callers may fall back to the task_data's hardcoded summary).
+    """
+    is_completed = status == TaskStatus.COMPLETED
+    if not is_completed and status != TaskStatus.FAILED:
+        return None
+    pattern = SUMMARY_TEMPLATES.get((template_name, is_completed))
+    if not pattern:
+        return None
+    return pattern.format_map(_SlotDict(slots))
+
+
 DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
     "appointment_success": [
         {
             "speaker": Speaker.AGENT,
-            "text": "Hello, I'm calling on behalf of a patient to schedule an appointment.",
+            "text": "Hello, this is an automated assistant. I'm calling for {patient_name} to schedule a {service_type} appointment.",
             "intent": None,
         },
         {
@@ -1217,7 +1506,7 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "We'd prefer March 20 at 10:00 AM if possible.",
+            "text": "We'd prefer {preferred_date} at {preferred_time} if possible.",
             "intent": None,
         },
         {
@@ -1232,12 +1521,12 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "City Dental Clinic, 45 Stefan cel Mare. No special preparation needed.",
+            "text": "We're at the main clinic. No special preparation needed.",
             "intent": "provide_info",
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "Thank you very much. The appointment is confirmed for March 20 at 10 AM. "
+            "text": "Thank you very much. The appointment is confirmed for {preferred_date} at {preferred_time}. "
             "Have a great day! [OBJECTIVE_ACHIEVED]",
             "intent": None,
         },
@@ -1250,17 +1539,18 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
     "reservation_confirmed": [
         {
             "speaker": Speaker.AGENT,
-            "text": "Hello, I'm calling to confirm reservation RES-2026-0042 for March 18.",
+            "text": "Hello, this is an automated assistant calling for {guest_name} "
+            "to confirm reservation {reservation_id} for {reservation_date}.",
             "intent": None,
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "One moment please... Yes, I see it. Table for 2 at 7 PM.",
+            "text": "One moment please... Yes, I see it. The reservation is active.",
             "intent": "confirmation",
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "That's correct. Is everything still on track?",
+            "text": "Great. Is everything still on track for {reservation_date}?",
             "intent": None,
         },
         {
@@ -1277,12 +1567,12 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
     "appointment_failed": [
         {
             "speaker": Speaker.AGENT,
-            "text": "Hello, I'd like to book an eye exam for March 15 at 2 PM.",
+            "text": "Hello, I'd like to book a {service_type} appointment for {preferred_date} at {preferred_time}.",
             "intent": None,
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "I'm sorry, we're fully booked on the 15th.",
+            "text": "I'm sorry, we're fully booked that day.",
             "intent": "rejection",
         },
         {
@@ -1292,34 +1582,34 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "The earliest opening is March 22 at 3 PM.",
+            "text": "The earliest opening is next week at 3 PM.",
             "intent": "provide_info",
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "I'll need to check with the patient. Thank you for the information. [OBJECTIVE_FAILED]",
+            "text": "I'll need to check with {patient_name}. Thank you for the information. [OBJECTIVE_FAILED]",
             "intent": None,
         },
     ],
     "follow_up_success": [
         {
             "speaker": Speaker.AGENT,
-            "text": "Hi, I'm calling about reference number ORD-88712 regarding a parcel delivery.",
+            "text": "Hi, I'm calling about {reference_number} regarding {follow_up_topic}.",
             "intent": None,
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "Let me pull that up... Yes, the parcel is currently out for delivery.",
+            "text": "Let me pull that up... Yes, I can see the details here.",
             "intent": "provide_info",
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "When can we expect it to arrive?",
+            "text": "When can we expect the next update?",
             "intent": None,
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "It should be delivered by 5 PM today.",
+            "text": "Everything's on schedule — you should hear back by end of day.",
             "intent": "provide_info",
         },
         {
@@ -1328,10 +1618,39 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
             "intent": None,
         },
     ],
+    "reschedule_success": [
+        {
+            "speaker": Speaker.AGENT,
+            "text": "Hello, this is an automated assistant calling for {booked_name}. "
+            "I need to reschedule an appointment from {original_date} at {original_time}.",
+            "intent": None,
+        },
+        {
+            "speaker": Speaker.INTERLOCUTOR,
+            "text": "I see the appointment. What date would work better?",
+            "intent": "request_info",
+        },
+        {
+            "speaker": Speaker.AGENT,
+            "text": "We'd like to move it to {new_preferred_date} at {new_preferred_time} if possible.",
+            "intent": None,
+        },
+        {
+            "speaker": Speaker.INTERLOCUTOR,
+            "text": "That slot is available. I'll update it now.",
+            "intent": "confirmation",
+        },
+        {
+            "speaker": Speaker.AGENT,
+            "text": "Perfect. So confirmed for {new_preferred_date} at {new_preferred_time} for {service_type}. "
+            "Thank you! [OBJECTIVE_ACHIEVED]",
+            "intent": None,
+        },
+    ],
     "cancellation_success": [
         {
             "speaker": Speaker.AGENT,
-            "text": "Hello, I need to cancel an appointment on March 12 at 9 AM for John Smith.",
+            "text": "Hello, I need to cancel an appointment on {appointment_date} at {appointment_time} for {booked_name}.",
             "intent": None,
         },
         {
@@ -1341,7 +1660,7 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "There's a travel conflict. Is there a cancellation fee?",
+            "text": "{reason}. Is there a cancellation fee?",
             "intent": None,
         },
         {
@@ -1358,7 +1677,8 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
     "ro_programare_success": [
         {
             "speaker": Speaker.AGENT,
-            "text": "Bună ziua, sunt Ana. Aș dori să fac o programare pentru un control stomatologic.",
+            "text": "Bună ziua, sunt un asistent automat. Sun din partea lui {patient_name} "
+            "pentru a face o programare de {service_type}.",
             "intent": None,
         },
         {
@@ -1368,17 +1688,17 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "Preferabil pe 2 aprilie, dimineața dacă se poate.",
+            "text": "Preferabil pe {preferred_date}, la ora {preferred_time} dacă se poate.",
             "intent": None,
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "Verific... Da, avem liber la ora 9:30.",
+            "text": "Verific... Da, avem liber.",
             "intent": "confirmation",
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "Perfect, confirm pentru 9:30. Mulțumesc frumos! [OBJECTIVE_ACHIEVED]",
+            "text": "Perfect, confirm pentru {preferred_date} la {preferred_time}. Mulțumesc frumos! [OBJECTIVE_ACHIEVED]",
             "intent": None,
         },
         {
@@ -1390,17 +1710,18 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
     "ro_rezervare_success": [
         {
             "speaker": Speaker.AGENT,
-            "text": "Bună ziua, sun pentru a confirma rezervarea REZ-2026-0110 pentru 5 aprilie.",
+            "text": "Bună ziua, sun din partea lui {guest_name} pentru a confirma "
+            "rezervarea {reservation_id} pentru {reservation_date}.",
             "intent": None,
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "Un moment, vă rog... Da, o văd. Masă pentru 4 persoane la ora 19:00.",
+            "text": "Un moment, vă rog... Da, o văd. Totul este în regulă.",
             "intent": "confirmation",
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "Exact. Totul este în regulă?",
+            "text": "Perfect. Deci rezervarea rămâne activă pentru {reservation_date}?",
             "intent": None,
         },
         {
@@ -1414,25 +1735,82 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
             "intent": None,
         },
     ],
-    "ro_informatii_success": [
+    "ro_reschedule_success": [
         {
             "speaker": Speaker.AGENT,
-            "text": "Bună ziua, mă numesc Alex. Aș dori să aflu prețul unui abonament anual.",
+            "text": "Bună ziua, sun din partea lui {booked_name} pentru a reprograma "
+            "programarea din {original_date} de la ora {original_time}.",
             "intent": None,
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "Sigur, abonamentul anual costă 3.200 MDL și include sală și bazin.",
+            "text": "Am găsit programarea. Ce dată ați prefera?",
+            "intent": "request_info",
+        },
+        {
+            "speaker": Speaker.AGENT,
+            "text": "Am dori s-o mutăm pe {new_preferred_date} la ora {new_preferred_time}, dacă se poate.",
+            "intent": None,
+        },
+        {
+            "speaker": Speaker.INTERLOCUTOR,
+            "text": "Ora e liberă, am actualizat programarea.",
+            "intent": "confirmation",
+        },
+        {
+            "speaker": Speaker.AGENT,
+            "text": "Perfect. Confirmat pentru {new_preferred_date} la {new_preferred_time}. "
+            "Mulțumesc! [OBJECTIVE_ACHIEVED]",
+            "intent": None,
+        },
+    ],
+    "ro_anulare_success": [
+        {
+            "speaker": Speaker.AGENT,
+            "text": "Bună ziua, sun din partea lui {booked_name} pentru a anula "
+            "programarea din {appointment_date} de la ora {appointment_time}.",
+            "intent": None,
+        },
+        {
+            "speaker": Speaker.INTERLOCUTOR,
+            "text": "Am găsit-o. Pot întreba care este motivul anulării?",
+            "intent": "request_info",
+        },
+        {
+            "speaker": Speaker.AGENT,
+            "text": "{reason}. Există vreo taxă de anulare?",
+            "intent": None,
+        },
+        {
+            "speaker": Speaker.INTERLOCUTOR,
+            "text": "Fără taxă, s-a anulat cu succes.",
+            "intent": "confirmation",
+        },
+        {
+            "speaker": Speaker.AGENT,
+            "text": "Vă mulțumesc. O zi bună! [OBJECTIVE_ACHIEVED]",
+            "intent": None,
+        },
+    ],
+    "ro_informatii_success": [
+        {
+            "speaker": Speaker.AGENT,
+            "text": "Bună ziua, sunt un asistent automat. Aș dori să aflu despre {question_topic} de la {business_name}.",
+            "intent": None,
+        },
+        {
+            "speaker": Speaker.INTERLOCUTOR,
+            "text": "Sigur, vă ofer informațiile pe loc.",
             "intent": "provide_info",
         },
         {
             "speaker": Speaker.AGENT,
-            "text": "Mulțumesc pentru informație. Există vreo ofertă în perioada aceasta?",
+            "text": "Mulțumesc pentru informație. Există vreo ofertă activă în perioada aceasta?",
             "intent": None,
         },
         {
             "speaker": Speaker.INTERLOCUTOR,
-            "text": "Da, avem 10% reducere pentru studenți până la sfârșitul lunii.",
+            "text": "Da, avem promoții valabile până la sfârșitul lunii.",
             "intent": "provide_info",
         },
         {
@@ -1444,7 +1822,37 @@ DEMO_TRANSCRIPTS: dict[str, list[dict]] = {
 }
 
 
+TRANSCRIPT_KEY_BY_TEMPLATE_NAME: dict[str, str] = {
+    "Make appointment": "appointment_success",
+    "Confirm reservation": "reservation_confirmed",
+    "Cancel appointment": "cancellation_success",
+    "Reschedule appointment": "reschedule_success",
+    "Follow-up call": "follow_up_success",
+    "Request information": "follow_up_success",
+    "Order status check": "follow_up_success",
+    "File a complaint": "appointment_failed",
+    "Prescription refill request": "appointment_success",
+    "Service outage report": "follow_up_success",
+    "Insurance claim inquiry": "follow_up_success",
+    "Payment reminder": "follow_up_success",
+    "Programare la medic": "ro_programare_success",
+    "Confirmare rezervare": "ro_rezervare_success",
+    "Solicitare informații": "ro_informatii_success",
+    "Anulare programare": "ro_anulare_success",
+    "Reprogramare programare": "ro_reschedule_success",
+    "Apel de revenire": "ro_informatii_success",
+    "Verificare status comandă": "ro_informatii_success",
+    "Depunere plângere": "ro_informatii_success",
+    "Cerere rețetă": "ro_programare_success",
+    "Raportare întrerupere serviciu": "ro_informatii_success",
+    "Întrebare dosar asigurare": "ro_informatii_success",
+    "Reamintire plată": "ro_informatii_success",
+}
+
+
 async def seed_call_sessions(session: AsyncSession, tasks: list[tuple[int, str]]) -> None:
+    from app.modules.templates.models import DialogTemplate
+
     transcript_keys = list(DEMO_TRANSCRIPTS.keys())
     total_sessions = 0
     total_log_lines = 0
@@ -1453,15 +1861,20 @@ async def seed_call_sessions(session: AsyncSession, tasks: list[tuple[int, str]]
     existing_session_task_ids = set(existing_task_ids_result.all())
 
     result = await session.exec(
-        select(Task.id, Task.status, Task.created_at).where(Task.status.in_([TaskStatus.COMPLETED, TaskStatus.FAILED]))
+        select(Task.id, Task.status, Task.created_at, Task.template_id, Task.slot_data).where(
+            Task.status.in_([TaskStatus.COMPLETED, TaskStatus.FAILED])
+        )
     )
     eligible_tasks = [
-        (task_id, status, created_at)
-        for (task_id, status, created_at) in result.all()
+        (task_id, status, created_at, template_id, slot_data or {})
+        for (task_id, status, created_at, template_id, slot_data) in result.all()
         if task_id not in existing_session_task_ids
     ]
 
-    for task_index, (task_id, _task_status, task_created_at) in enumerate(eligible_tasks):
+    template_rows = await session.exec(select(DialogTemplate.id, DialogTemplate.name))
+    template_name_by_id: dict[int, str] = dict(template_rows.all())
+
+    for task_index, (task_id, _task_status, task_created_at, template_id, slot_data) in enumerate(eligible_tasks):
         duration = BASE_CALL_DURATION_SECONDS + (task_id * CALL_DURATION_VARIATION_FACTOR) % MAX_CALL_DURATION_VARIATION
 
         call_session = CallSession(
@@ -1477,8 +1890,12 @@ async def seed_call_sessions(session: AsyncSession, tasks: list[tuple[int, str]]
         await session.refresh(call_session)
         total_sessions += 1
 
-        template_key = transcript_keys[task_index % len(transcript_keys)]
-        transcript_lines = DEMO_TRANSCRIPTS[template_key]
+        template_name = template_name_by_id.get(template_id, "")
+        template_key = TRANSCRIPT_KEY_BY_TEMPLATE_NAME.get(
+            template_name,
+            transcript_keys[task_index % len(transcript_keys)],
+        )
+        transcript_lines = _render_transcript(DEMO_TRANSCRIPTS[template_key], slot_data)
 
         transcript_start_time = call_session.start_time
         for line_index, transcript_line in enumerate(transcript_lines):

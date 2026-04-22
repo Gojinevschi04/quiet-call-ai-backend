@@ -1,4 +1,4 @@
-.PHONY: help db.make_migrations db.up db.down db.seed db.seed.demo black.run ruff.run mypy.run app.start app.stop app.logs app.logs.api app.logs.worker app.test
+.PHONY: help db.make_migrations db.up db.down db.reset db.seed db.seed.demo black.run ruff.run mypy.run app.start app.stop app.logs app.logs.api app.logs.worker app.test
 
 .DEFAULT_GOAL := help
 
@@ -11,6 +11,7 @@ help:
 	@echo "                        Example: make db.make_migrations m='Add user table'"
 	@echo "  db.up                 Run all pending migrations"
 	@echo "  db.down               Rollback all migrations to base"
+	@echo "  db.reset              WIPE all data, re-run migrations, re-seed templates + demo"
 	@echo "  db.seed               Seed dialog templates"
 	@echo "  db.seed.demo          Seed demo users + tasks (for testing)"
 	@echo ""
@@ -41,6 +42,18 @@ db.up:
 
 db.down:
 	@poetry run alembic downgrade base
+
+db.reset:
+	@echo "WARNING: this will DROP the entire 'public' schema and DELETE all data."
+	@read -p "Type 'yes' to continue: " ans && [ "$$ans" = "yes" ] || (echo "Aborted." && exit 1)
+	@echo "Dropping schema public..."
+	@docker exec qc_postgres psql -U app -d app_db -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+	@echo "Re-running migrations..."
+	@poetry run alembic upgrade head
+	@echo "Seeding templates + demo..."
+	@poetry run python -m app.scripts.seed_templates
+	@poetry run python -m app.scripts.seed_demo
+	@echo "DB reset complete."
 
 db.seed:
 	@poetry run python -m app.scripts.seed_templates
