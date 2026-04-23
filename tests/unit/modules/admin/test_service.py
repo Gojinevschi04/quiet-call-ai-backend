@@ -164,7 +164,7 @@ async def test_get_all_tasks() -> None:
 
     assert total == 1
     assert len(tasks) == 1
-    mock_task_repo.get_all_paginated_admin.assert_called_once_with(50, 0, None)
+    mock_task_repo.get_all_paginated_admin.assert_called_once_with(50, 0, None, None)
 
 
 @pytest.mark.asyncio
@@ -176,7 +176,7 @@ async def test_get_all_tasks_with_status_filter() -> None:
     tasks, total = await service.get_all_tasks(limit=10, offset=0, status=TaskStatus.FAILED)
 
     assert total == 0
-    mock_task_repo.get_all_paginated_admin.assert_called_once_with(10, 0, TaskStatus.FAILED)
+    mock_task_repo.get_all_paginated_admin.assert_called_once_with(10, 0, TaskStatus.FAILED, None)
 
 
 @pytest.mark.asyncio
@@ -188,7 +188,7 @@ async def test_get_all_tasks_custom_pagination() -> None:
     tasks, total = await service.get_all_tasks(limit=20, offset=30)
 
     assert total == 50
-    mock_task_repo.get_all_paginated_admin.assert_called_once_with(20, 30, None)
+    mock_task_repo.get_all_paginated_admin.assert_called_once_with(20, 30, None, None)
 
 
 # --- update_user_role ---
@@ -234,17 +234,19 @@ async def test_update_user_role_demote_to_user() -> None:
     assert result.role == UserRole.USER
 
 
-# --- delete_user ---
+# --- delete_user (soft delete) ---
 
 
 @pytest.mark.asyncio
-async def test_delete_user(mock_user: User) -> None:
+async def test_delete_user_sets_is_active_false(mock_user: User) -> None:
+    """Soft delete: sets is_active=False, does NOT cascade-delete tasks/sessions."""
+    mock_user.is_active = True
+    mock_in_progress_result = MagicMock()
+    mock_in_progress_result.first.return_value = None  # no active calls
+
     mock_session = AsyncMock()
-    # No tasks for user
-    mock_result_empty = MagicMock()
-    mock_result_empty.all.return_value = []
-    mock_session.exec = AsyncMock(return_value=mock_result_empty)
-    mock_session.delete = AsyncMock()
+    mock_session.exec = AsyncMock(return_value=mock_in_progress_result)
+    mock_session.add = MagicMock()
     mock_session.commit = AsyncMock()
 
     mock_user_repo = MagicMock(spec=UserRepository)
@@ -255,8 +257,9 @@ async def test_delete_user(mock_user: User) -> None:
     result = await service.delete_user(1)
 
     assert result is True
-    mock_session.delete.assert_called_once_with(mock_user)
-    mock_session.commit.assert_called_once()
+    assert mock_user.is_active is False
+    mock_session.add.assert_called_once_with(mock_user)
+    mock_session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -271,33 +274,17 @@ async def test_delete_user_not_found() -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_user_cascades_tasks_sessions_and_log_lines(mock_user: User) -> None:
-    """User with tasks + call sessions + log lines is fully cascade-deleted."""
-    mock_task_ids_result = MagicMock()
-    mock_task_ids_result.all.return_value = [10, 11]
-    mock_session_ids_result = MagicMock()
-    mock_session_ids_result.all.return_value = [100]
-    mock_log_line = MagicMock()
-    mock_log_lines_result = MagicMock()
-    mock_log_lines_result.all.return_value = [mock_log_line]
-    mock_call_session = MagicMock()
-    mock_call_sessions_result = MagicMock()
-    mock_call_sessions_result.all.return_value = [mock_call_session]
-    mock_task = MagicMock()
-    mock_tasks_result = MagicMock()
-    mock_tasks_result.all.return_value = [mock_task]
+async def test_delete_user_blocked_when_task_in_progress(mock_user: User) -> None:
+    """Deactivation rejected if the user has an IN_PROGRESS task."""
+    from app.modules.admin.exceptions import UserHasActiveCallError
+
+    mock_user.is_active = True
+    mock_in_progress_result = MagicMock()
+    mock_in_progress_result.first.return_value = 42  # task id 42 in progress
 
     mock_session = AsyncMock()
-    mock_session.exec = AsyncMock(
-        side_effect=[
-            mock_task_ids_result,
-            mock_session_ids_result,
-            mock_log_lines_result,
-            mock_call_sessions_result,
-            mock_tasks_result,
-        ]
-    )
-    mock_session.delete = AsyncMock()
+    mock_session.exec = AsyncMock(return_value=mock_in_progress_result)
+    mock_session.add = MagicMock()
     mock_session.commit = AsyncMock()
 
     mock_user_repo = MagicMock(spec=UserRepository)
@@ -305,47 +292,42 @@ async def test_delete_user_cascades_tasks_sessions_and_log_lines(mock_user: User
     mock_user_repo._session = mock_session
 
     service = _build_service(user_repo=mock_user_repo)
-    result = await service.delete_user(1)
+    with pytest.raises(UserHasActiveCallError):
+        await service.delete_user(1)
+
+    assert mock_user.is_active is True
+    mock_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_restore_user_sets_is_active_true(mock_user: User) -> None:
+    mock_user.is_active = False
+    mock_session = AsyncMock()
+    mock_session.add = MagicMock()
+    mock_session.commit = AsyncMock()
+
+    mock_user_repo = MagicMock(spec=UserRepository)
+    mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
+    mock_user_repo._session = mock_session
+
+    service = _build_service(user_repo=mock_user_repo)
+    result = await service.restore_user(1)
 
     assert result is True
-    assert mock_session.delete.await_count == 4
-    mock_session.delete.assert_any_await(mock_log_line)
-    mock_session.delete.assert_any_await(mock_call_session)
-    mock_session.delete.assert_any_await(mock_task)
-    mock_session.delete.assert_any_await(mock_user)
+    assert mock_user.is_active is True
     mock_session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_delete_user_with_tasks_but_no_sessions(mock_user: User) -> None:
-    mock_task_ids_result = MagicMock()
-    mock_task_ids_result.all.return_value = [10]
-    mock_empty_sessions_result = MagicMock()
-    mock_empty_sessions_result.all.return_value = []
-    mock_task = MagicMock()
-    mock_tasks_result = MagicMock()
-    mock_tasks_result.all.return_value = [mock_task]
-
-    mock_session = AsyncMock()
-    mock_session.exec = AsyncMock(
-        side_effect=[
-            mock_task_ids_result,
-            mock_empty_sessions_result,
-            mock_tasks_result,
-        ]
-    )
-    mock_session.delete = AsyncMock()
-    mock_session.commit = AsyncMock()
-
+async def test_restore_user_already_active_returns_false(mock_user: User) -> None:
+    mock_user.is_active = True
     mock_user_repo = MagicMock(spec=UserRepository)
     mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
-    mock_user_repo._session = mock_session
 
     service = _build_service(user_repo=mock_user_repo)
-    result = await service.delete_user(1)
+    result = await service.restore_user(1)
 
-    assert result is True
-    assert mock_session.delete.await_count == 2
+    assert result is False
 
 
 @pytest.mark.asyncio

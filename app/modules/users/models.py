@@ -15,3 +15,4 @@ class User(BaseModel, table=True):
     webhook_url: str | None = Field(default=None, nullable=True)
     password_changed_at: datetime | None = Field(default=None, nullable=True)
     assistant_name: str | None = Field(default=None, nullable=True)
+    is_active: bool = Field(default=True, nullable=False, index=True)

@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -50,6 +50,10 @@ async def test_get_admin_users(admin_client: AsyncClient) -> None:
         mock_user.email = "user@test.com"
         mock_user.role = UserRole.USER
         mock_user.phone_number = "+37312345678"
+        mock_user.email_notifications = True
+        mock_user.webhook_url = None
+        mock_user.assistant_name = None
+        mock_user.is_active = True
         mock_user.created_at.isoformat.return_value = "2026-01-01T00:00:00"
         mock_user.updated_at.isoformat.return_value = "2026-01-01T00:00:00"
         mock_get.return_value = ([mock_user], 1)
@@ -78,7 +82,13 @@ async def test_get_admin_users_unauthenticated(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_get_admin_tasks(admin_client: AsyncClient) -> None:
-    with patch("app.modules.admin.service.AdminService.get_all_tasks") as mock_get:
+    with (
+        patch("app.modules.admin.service.AdminService.get_all_tasks") as mock_get,
+        patch(
+            "app.modules.templates.repository.TemplateRepository.get_names_by_ids",
+            new_callable=AsyncMock,
+        ) as mock_names,
+    ):
         mock_task = MagicMock()
         mock_task.id = 1
         mock_task.target_phone = "+37312345678"
@@ -91,6 +101,7 @@ async def test_get_admin_tasks(admin_client: AsyncClient) -> None:
         mock_task.created_at = "2026-01-01T00:00:00"
         mock_task.updated_at = "2026-01-01T00:00:00"
         mock_get.return_value = ([mock_task], 1)
+        mock_names.return_value = {1: "Make appointment"}
 
         response = await admin_client.get("/admin/tasks")
         assert response.status_code == 200
@@ -101,8 +112,15 @@ async def test_get_admin_tasks(admin_client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_get_admin_tasks_with_status_filter(admin_client: AsyncClient) -> None:
-    with patch("app.modules.admin.service.AdminService.get_all_tasks") as mock_get:
+    with (
+        patch("app.modules.admin.service.AdminService.get_all_tasks") as mock_get,
+        patch(
+            "app.modules.templates.repository.TemplateRepository.get_names_by_ids",
+            new_callable=AsyncMock,
+        ) as mock_names,
+    ):
         mock_get.return_value = ([], 0)
+        mock_names.return_value = {}
         response = await admin_client.get("/admin/tasks?status=failed")
         assert response.status_code == 200
         assert response.json()["total"] == 0
@@ -125,6 +143,10 @@ async def test_update_user_role(admin_client: AsyncClient) -> None:
         mock_user.email = "user@test.com"
         mock_user.role = UserRole.ADMIN
         mock_user.phone_number = None
+        mock_user.email_notifications = True
+        mock_user.webhook_url = None
+        mock_user.assistant_name = None
+        mock_user.is_active = True
         mock_user.created_at.isoformat.return_value = "2026-01-01T00:00:00"
         mock_user.updated_at.isoformat.return_value = "2026-01-01T00:00:00"
         mock_update.return_value = mock_user
@@ -171,7 +193,7 @@ async def test_delete_admin_user(admin_client: AsyncClient) -> None:
         mock_delete.return_value = True
         response = await admin_client.delete("/admin/users/1")
         assert response.status_code == 200
-        assert response.json()["message"] == "User deleted successfully"
+        assert response.json()["message"] == "User deactivated successfully"
 
 
 @pytest.mark.asyncio
@@ -186,12 +208,50 @@ async def test_delete_admin_user_not_found(admin_client: AsyncClient) -> None:
 async def test_delete_admin_user_self_blocked(admin_client: AsyncClient) -> None:
     response = await admin_client.delete("/admin/users/2")  # admin has id=2
     assert response.status_code == 400
-    assert "Cannot delete your own account" in response.json()["detail"]
+    assert "Cannot deactivate your own account" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
 async def test_delete_admin_user_non_admin(authenticated_client: AsyncClient) -> None:
     response = await authenticated_client.delete("/admin/users/1")
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_admin_user_active_call_returns_409(admin_client: AsyncClient) -> None:
+    """Deactivating a user with an IN_PROGRESS task returns 409 Conflict."""
+    from app.modules.admin.exceptions import UserHasActiveCallError
+
+    with patch("app.modules.admin.service.AdminService.delete_user") as mock_delete:
+        mock_delete.side_effect = UserHasActiveCallError("User 1 has an in-progress call.")
+        response = await admin_client.delete("/admin/users/1")
+        assert response.status_code == 409
+        assert "in-progress" in response.json()["detail"]
+
+
+# --- Restore User ---
+
+
+@pytest.mark.asyncio
+async def test_restore_admin_user(admin_client: AsyncClient) -> None:
+    with patch("app.modules.admin.service.AdminService.restore_user") as mock_restore:
+        mock_restore.return_value = True
+        response = await admin_client.post("/admin/users/1/restore")
+        assert response.status_code == 200
+        assert "restored" in response.json()["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_restore_admin_user_not_found(admin_client: AsyncClient) -> None:
+    with patch("app.modules.admin.service.AdminService.restore_user") as mock_restore:
+        mock_restore.return_value = False
+        response = await admin_client.post("/admin/users/999/restore")
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_restore_admin_user_non_admin(authenticated_client: AsyncClient) -> None:
+    response = await authenticated_client.post("/admin/users/1/restore")
     assert response.status_code == 403
 
 
@@ -318,11 +378,18 @@ async def test_get_admin_tasks_invalid_status(admin_client: AsyncClient) -> None
 
 @pytest.mark.asyncio
 async def test_get_admin_tasks_with_pagination(admin_client: AsyncClient) -> None:
-    with patch("app.modules.admin.service.AdminService.get_all_tasks") as mock_get:
+    with (
+        patch("app.modules.admin.service.AdminService.get_all_tasks") as mock_get,
+        patch(
+            "app.modules.templates.repository.TemplateRepository.get_names_by_ids",
+            new_callable=AsyncMock,
+        ) as mock_names,
+    ):
         mock_get.return_value = ([], 0)
+        mock_names.return_value = {}
         response = await admin_client.get("/admin/tasks?limit=10&offset=20")
         assert response.status_code == 200
-        mock_get.assert_called_once_with(10, 20, None)
+        mock_get.assert_called_once_with(10, 20, None, None)
 
 
 @pytest.mark.asyncio
@@ -355,7 +422,7 @@ async def test_delete_user_with_tasks(admin_client: AsyncClient) -> None:
         mock_delete.return_value = True
         response = await admin_client.delete("/admin/users/1")
         assert response.status_code == 200
-        assert response.json()["message"] == "User deleted successfully"
+        assert response.json()["message"] == "User deactivated successfully"
 
 
 @pytest.mark.asyncio

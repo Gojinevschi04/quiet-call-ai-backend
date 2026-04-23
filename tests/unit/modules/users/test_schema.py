@@ -45,7 +45,6 @@ def test_profile_update_accepts_empty_webhook_url() -> None:
 
 
 import pytest
-from app.modules.users.schema import ProfileUpdate
 
 
 @pytest.mark.parametrize("good_name", ["Ana", "Maria-Elena", "Dr. Smith", "O'Brien", "Ана", "Maria Popescu"])

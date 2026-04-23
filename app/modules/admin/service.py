@@ -6,6 +6,7 @@ from fastapi import Depends
 from sqlmodel import func, select
 
 from app.core.logging import get_logger
+from app.modules.admin.exceptions import UserHasActiveCallError
 from app.modules.calls.models import CallSession, LogLine
 from app.modules.calls.pricing import (
     COST_DECIMAL_PLACES,
@@ -49,6 +50,7 @@ class AdminService:
             in_progress=counts.get(TaskStatus.IN_PROGRESS, 0),
             completed=counts.get(TaskStatus.COMPLETED, 0),
             failed=counts.get(TaskStatus.FAILED, 0),
+            deferred=counts.get(TaskStatus.DEFERRED, 0),
         )
 
         return AdminStatsResponse(
@@ -105,7 +107,7 @@ class AdminService:
                 func.count(Task.id).filter(Task.status == TaskStatus.COMPLETED),
             )
             .join(Task, Task.template_id == DialogTemplate.id)
-            .where(Task.status.in_([TaskStatus.COMPLETED, TaskStatus.FAILED]))
+            .where(Task.status.in_([TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.DEFERRED]))
             .group_by(DialogTemplate.name)
             .order_by(func.count(Task.id).desc())
         )
@@ -183,45 +185,49 @@ class AdminService:
         return await self.user_repository.get_all_paginated(offset, limit)
 
     async def get_all_tasks(
-        self, limit: int = 50, offset: int = 0, status: TaskStatus | None = None
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: TaskStatus | None = None,
+        language: str | None = None,
     ) -> tuple[Sequence[Task], int]:
-        return await self.task_repository.get_all_paginated_admin(limit, offset, status)
+        return await self.task_repository.get_all_paginated_admin(limit, offset, status, language)
 
     async def update_user_role(self, user_id: int, role: UserRole) -> User | None:
         return await self.user_repository.update_user_role(user_id, role)
 
     async def delete_user(self, user_id: int) -> bool:
+        """Soft-delete: set `is_active=False`. Keeps audit trail + historical tasks.
+
+        Rejects when the user has an IN_PROGRESS task — we don't want to silently
+        orphan a live call. Admin should wait for the call to finish or cancel it first.
+        """
         user = await self.user_repository.get_by_id(user_id)
         if not user:
             return False
 
-        # TODO: production — move cascade delete into a dedicated repository method
-        # (e.g., UserRepository.delete_with_cascade) to avoid accessing _session directly.
-        # Accessing the private _session breaks encapsulation but is acceptable for MVP.
         session = self.user_repository._session
+        in_progress_result = await session.exec(
+            select(Task.id).where(Task.user_id == user_id, Task.status == TaskStatus.IN_PROGRESS)
+        )
+        if in_progress_result.first() is not None:
+            raise UserHasActiveCallError(
+                f"User {user_id} has an in-progress call. Wait for it to finish or cancel it first."
+            )
 
-        result = await session.exec(select(Task.id).where(Task.user_id == user_id))
-        task_ids = list(result.all())
-
-        if task_ids:
-            result = await session.exec(select(CallSession.id).where(CallSession.task_id.in_(task_ids)))
-            session_ids = list(result.all())
-
-            if session_ids:
-                result = await session.exec(select(LogLine).where(LogLine.session_id.in_(session_ids)))
-                for log_line in result.all():
-                    await session.delete(log_line)
-
-                result = await session.exec(select(CallSession).where(CallSession.task_id.in_(task_ids)))
-                for cs in result.all():
-                    await session.delete(cs)
-
-            result = await session.exec(select(Task).where(Task.user_id == user_id))
-            for task in result.all():
-                await session.delete(task)
-
-        await session.delete(user)
+        user.is_active = False
+        session.add(user)
         await session.commit()
+        logger.info("Soft-deleted user %d (is_active=False)", user_id)
+        return True
 
-        logger.info("Deleted user %d and %d associated tasks", user_id, len(task_ids))
+    async def restore_user(self, user_id: int) -> bool:
+        """Re-activate a soft-deleted user."""
+        user = await self.user_repository.get_by_id(user_id)
+        if not user or user.is_active:
+            return False
+        user.is_active = True
+        self.user_repository._session.add(user)
+        await self.user_repository._session.commit()
+        logger.info("Restored user %d (is_active=True)", user_id)
         return True

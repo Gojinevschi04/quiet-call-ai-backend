@@ -96,6 +96,22 @@ async def test_authenticate_user_no_hashed_password(mock_user: User) -> None:
     assert exc_info.value.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_authenticate_user_rejects_inactive_account(mock_user: User) -> None:
+    """Deactivated users (soft-deleted via admin) cannot log in, even with correct password."""
+    mock_user.hashed_password = AuthService.hash_password("testpass123")
+    mock_user.is_active = False
+    mock_user_repo = MagicMock(spec=UserRepository)
+    mock_user_repo.get_by_email = AsyncMock(return_value=mock_user)
+
+    service = AuthService(user_repository=mock_user_repo)
+    with pytest.raises(HTTPException) as exc_info:
+        await service.authenticate_user("test@example.com", "testpass123")
+
+    assert exc_info.value.status_code == 403
+    assert "deactivated" in exc_info.value.detail.lower()
+
+
 # --- create_tokens ---
 
 

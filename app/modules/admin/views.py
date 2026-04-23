@@ -4,8 +4,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.schema import MessageResponse
+from app.modules.admin.exceptions import UserHasActiveCallError
 from app.modules.admin.service import AdminService
 from app.modules.tasks.schema import AdminStatsResponse, TaskListResponse, TaskResponse, TaskStatus
+from app.modules.templates.repository import TemplateRepository
 from app.modules.users.middleware import get_current_admin_user
 from app.modules.users.models import User
 from app.modules.users.schema import UserListResponse, UserResponse, UserUpdate
@@ -52,6 +54,10 @@ async def get_admin_users_view(
                 email=u.email,
                 role=u.role,
                 phone_number=u.phone_number,
+                email_notifications=u.email_notifications,
+                webhook_url=u.webhook_url,
+                assistant_name=u.assistant_name,
+                is_active=u.is_active,
                 created_at=u.created_at.isoformat(),
                 updated_at=u.updated_at.isoformat(),
             )
@@ -66,12 +72,16 @@ async def get_admin_users_view(
 @router.get("/tasks")
 async def get_admin_tasks_view(
     admin_service: Annotated[AdminService, Depends(AdminService)],
+    template_repository: Annotated[TemplateRepository, Depends(TemplateRepository)],
     _current_user: Annotated[User, Depends(get_current_admin_user)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     status: TaskStatus | None = None,
+    language: str | None = None,
 ) -> TaskListResponse:
-    tasks, total = await admin_service.get_all_tasks(limit, offset, status)
+    tasks, total = await admin_service.get_all_tasks(limit, offset, status, language)
+    template_ids = {t.template_id for t in tasks}
+    template_name_by_id = await template_repository.get_names_by_ids(template_ids)
     return TaskListResponse(
         items=[
             TaskResponse(
@@ -79,6 +89,7 @@ async def get_admin_tasks_view(
                 target_phone=t.target_phone,
                 status=t.status,
                 template_id=t.template_id,
+                template_name=template_name_by_id.get(t.template_id),
                 user_id=t.user_id,
                 slot_data=t.slot_data,
                 scheduled_time=t.scheduled_time,
@@ -117,6 +128,10 @@ async def update_admin_user_role_view(
         email=user.email,
         role=user.role,
         phone_number=user.phone_number,
+        email_notifications=user.email_notifications,
+        webhook_url=user.webhook_url,
+        assistant_name=user.assistant_name,
+        is_active=user.is_active,
         created_at=user.created_at.isoformat(),
         updated_at=user.updated_at.isoformat(),
     )
@@ -129,10 +144,28 @@ async def delete_admin_user_view(
     current_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> MessageResponse:
     if user_id == current_user.id:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Cannot delete your own account")
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Cannot deactivate your own account")
 
-    success = await admin_service.delete_user(user_id)
+    try:
+        success = await admin_service.delete_user(user_id)
+    except UserHasActiveCallError as error:
+        raise HTTPException(status_code=HTTPStatus.CONFLICT, detail=str(error)) from error
     if not success:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="User not found")
 
-    return MessageResponse(message="User deleted successfully")
+    return MessageResponse(message="User deactivated successfully")
+
+
+@router.post("/users/{user_id}/restore")
+async def restore_admin_user_view(
+    user_id: int,
+    admin_service: Annotated[AdminService, Depends(AdminService)],
+    _current_user: Annotated[User, Depends(get_current_admin_user)],
+) -> MessageResponse:
+    success = await admin_service.restore_user(user_id)
+    if not success:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail="User not found or already active",
+        )
+    return MessageResponse(message="User restored successfully")

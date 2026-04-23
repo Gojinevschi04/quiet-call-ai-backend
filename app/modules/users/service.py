@@ -62,6 +62,7 @@ class UserService:
             email_notifications=user.email_notifications,
             webhook_url=user.webhook_url,
             assistant_name=user.assistant_name,
+            is_active=user.is_active,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat(),
         )

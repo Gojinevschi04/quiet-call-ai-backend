@@ -31,6 +31,8 @@ async def get_current_user(
     user = await user_repository.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account has been deactivated")
 
     return user
 

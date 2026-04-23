@@ -123,6 +123,7 @@ class UserResponse(BaseModel):
     email_notifications: bool = True
     webhook_url: str | None = None
     assistant_name: str | None = None
+    is_active: bool = True
     created_at: str
     updated_at: str
 

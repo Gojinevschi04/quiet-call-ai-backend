@@ -16,7 +16,7 @@ def _make_credentials(token: str) -> HTTPAuthorizationCredentials:
 
 @pytest.mark.asyncio
 async def test_get_current_user_valid_access_token_returns_user() -> None:
-    user = User(id=5, email="ana@example.com", role=UserRole.USER, hashed_password="x")
+    user = User(id=5, email="ana@example.com", role=UserRole.USER, hashed_password="x", is_active=True)
     user_repository = MagicMock()
     user_repository.get_by_id = AsyncMock(return_value=user)
 
@@ -31,6 +31,29 @@ async def test_get_current_user_valid_access_token_returns_user() -> None:
 
     assert result is user
     user_repository.get_by_id.assert_awaited_once_with(5)
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_rejects_inactive_account() -> None:
+    """Soft-deleted users cannot authenticate — middleware returns 401 even for valid tokens."""
+    user = User(id=5, email="ana@example.com", role=UserRole.USER, hashed_password="x", is_active=False)
+    user_repository = MagicMock()
+    user_repository.get_by_id = AsyncMock(return_value=user)
+
+    with (
+        patch(
+            "app.modules.users.middleware.decode_token",
+            return_value={"sub": "5", "type": "access"},
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await get_current_user(
+            credentials=_make_credentials("valid-token"),
+            user_repository=user_repository,
+        )
+
+    assert exc_info.value.status_code == 401
+    assert "deactivated" in exc_info.value.detail.lower()
 
 
 @pytest.mark.asyncio
