@@ -349,3 +349,36 @@ async def test_get_template_response_has_is_active(authenticated_client: AsyncCl
         data = response.json()
         assert "is_active" in data
         assert data["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_restore_template_admin(admin_client: AsyncClient) -> None:
+    with patch("app.modules.templates.service.TemplateService.restore_template") as mock_restore:
+        mock_restore.return_value = True
+        response = await admin_client.post("/templates/1/restore")
+        assert response.status_code == 200
+        assert "restored" in response.json()["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_restore_template_already_active_returns_409(admin_client: AsyncClient) -> None:
+    with patch("app.modules.templates.service.TemplateService.restore_template") as mock_restore:
+        mock_restore.return_value = False
+        response = await admin_client.post("/templates/1/restore")
+        assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_restore_template_not_found(admin_client: AsyncClient) -> None:
+    from app.modules.templates.exceptions import TemplateNotFoundError
+
+    with patch("app.modules.templates.service.TemplateService.restore_template") as mock_restore:
+        mock_restore.side_effect = TemplateNotFoundError("not found")
+        response = await admin_client.post("/templates/999/restore")
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_restore_template_non_admin_forbidden(authenticated_client: AsyncClient) -> None:
+    response = await authenticated_client.post("/templates/1/restore")
+    assert response.status_code == 403

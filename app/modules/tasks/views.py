@@ -112,14 +112,21 @@ async def create_task_view(
 @router.get("/")
 async def get_tasks_view(
     task_service: Annotated[TaskService, Depends(TaskService)],
+    template_repository: Annotated[TemplateRepository, Depends(TemplateRepository)],
     current_user: Annotated[User, Depends(get_current_user)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     status: TaskStatus | None = None,
+    language: str | None = None,
 ) -> TaskListResponse:
-    tasks, total = await task_service.get_tasks(current_user.id, limit, offset, status)
+    tasks, total = await task_service.get_tasks(current_user.id, limit, offset, status, language)
+    template_ids = {task.template_id for task in tasks}
+    template_name_by_id = await template_repository.get_names_by_ids(template_ids)
     return TaskListResponse(
-        items=[_task_to_response(task) for task in tasks],
+        items=[
+            _task_to_response(task, template_name=template_name_by_id.get(task.template_id))
+            for task in tasks
+        ],
         total=total,
         limit=limit,
         offset=offset,

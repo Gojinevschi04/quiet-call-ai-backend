@@ -38,8 +38,15 @@ class TemplateService:
             raise TemplateNotFoundError(f"Template with id {template_id} not found")
         return template
 
-    async def get_templates(self, limit: int = 50, offset: int = 0) -> Sequence[DialogTemplate]:
-        templates, _ = await self.template_repository.get_all_paginated(limit, offset)
+    async def get_templates(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        include_inactive: bool = False,
+    ) -> Sequence[DialogTemplate]:
+        templates, _ = await self.template_repository.get_all_paginated(
+            limit, offset, include_inactive=include_inactive
+        )
         return templates
 
     async def update_template(self, template_id: int, data: TemplateUpdate) -> DialogTemplate:
@@ -66,3 +73,12 @@ class TemplateService:
         if not template.is_active:
             raise TemplateNotFoundError(f"Template with id {template_id} not found")
         return await self.template_repository.deactivate(template_id)
+
+    async def restore_template(self, template_id: int) -> bool:
+        """Re-activate a soft-deleted template so it appears again in the catalog."""
+        template = await self.template_repository.get_by_id(template_id)
+        if not template:
+            raise TemplateNotFoundError(f"Template with id {template_id} not found")
+        if template.is_active:
+            return False
+        return await self.template_repository.restore(template_id)

@@ -57,52 +57,64 @@ class RealtimeCallManager:
         template = await self.template_repository.get_by_id(task.template_id)
         if not template:
             raise ValueError(f"Template {task.template_id} not found")
-        if not template.is_active:
-            raise ValueError(
-                f"Template {task.template_id} is deactivated — cannot execute scheduled task"
-            )
+        # Deactivated templates block NEW task creation (see TaskService.create_task),
+        # but existing tasks that already reference a template must remain executable —
+        # the task is a snapshot of a validly-configured call at the time it was created.
+
+        # Snapshot every attribute we'll need BEFORE claim_for_execution() commits —
+        # after commit the session expires all instances and any subsequent attribute
+        # access triggers a lazy re-fetch that fails in async context with
+        # `MissingGreenlet` / `greenlet_spawn has not been called`.
+        task_target_phone = task.target_phone
+        template_name = template.name
+        template_language = template.language
+        task_id_local = task.id
 
         claimed = await self.task_repository.claim_for_execution(task_id)
         if not claimed:
             raise ValueError(f"Task {task_id} is already being executed by another worker")
         task.status = TaskStatus.IN_PROGRESS
 
-        language = template.language or DEFAULT_LANGUAGE
-        dial_phone = self._resolve_phone(task.target_phone)
+        language = template_language or DEFAULT_LANGUAGE
+        dial_phone = self._resolve_phone(task_target_phone)
         logger.info(
             "[task=%d] Executing realtime call: target=%s dial=%s template=%s lang=%s",
-            task.id,
-            task.target_phone,
+            task_id_local,
+            task_target_phone,
             dial_phone,
-            template.name,
+            template_name,
             language,
         )
 
         await self._emit(task_id, "status_change", {"status": TaskStatus.IN_PROGRESS})
         await self._emit(task_id, "dialing", {"phone": dial_phone})
 
-        call_session = CallSession(task_id=task.id, start_time=datetime.now())
+        call_session = CallSession(task_id=task_id_local, start_time=datetime.now())
         await self.call_session_repository.create(call_session)
-        logger.info("[task=%d] CallSession created", task.id)
+        logger.info("[task=%d] CallSession created", task_id_local)
 
         media_stream_ws_url = self._compute_ws_url()
-        logger.info("[task=%d] Stream WS URL: %s", task.id, media_stream_ws_url)
+        logger.info("[task=%d] Stream WS URL: %s", task_id_local, media_stream_ws_url)
 
         try:
             twiml = self._build_stream_twiml(task_id, user_id, language, media_stream_ws_url)
-            logger.info("[task=%d] Initiating Twilio call with Media Stream TwiML", task.id)
+            logger.info("[task=%d] Initiating Twilio call with Media Stream TwiML", task_id_local)
             call_sid = await self._voice.initiate_call_with_twiml(
                 to_phone=dial_phone,
                 twiml=twiml,
                 status_callback_url=f"{settings.BASE_URL}/webhooks/calls/{task_id}/status",
                 recording_callback_url=f"{settings.BASE_URL}/webhooks/calls/{task_id}/recording",
             )
-            logger.info("[task=%d] Twilio call initiated: call_sid=%s", task.id, call_sid)
+            logger.info("[task=%d] Twilio call initiated: call_sid=%s", task_id_local, call_sid)
         except Exception as call_error:
-            logger.exception("[task=%d] Failed to initiate realtime call", task.id)
-            task.status = TaskStatus.FAILED
-            task.error_reason = str(call_error)
-            await self.task_repository.update(task)
+            logger.exception("[task=%d] Failed to initiate realtime call", task_id_local)
+            # Re-fetch task to avoid greenlet lazy-load on expired instance
+            fresh_task = await self.task_repository.get_by_id_any_user(task_id_local)
+            if fresh_task:
+                fresh_task.status = TaskStatus.FAILED
+                fresh_task.error_reason = str(call_error)
+                await self.task_repository.update(fresh_task)
+                task = fresh_task
             await self._emit(
                 task_id,
                 "call_ended",

@@ -70,7 +70,7 @@ async def test_get_templates(mock_template: DialogTemplate) -> None:
     result = await service.get_templates()
 
     assert len(result) == 1
-    mock_repo.get_all_paginated.assert_called_once_with(50, 0)
+    mock_repo.get_all_paginated.assert_called_once_with(50, 0, include_inactive=False)
 
 
 @pytest.mark.asyncio
@@ -82,7 +82,7 @@ async def test_get_templates_with_pagination(mock_template: DialogTemplate) -> N
     result = await service.get_templates(limit=10, offset=5)
 
     assert len(result) == 1
-    mock_repo.get_all_paginated.assert_called_once_with(10, 5)
+    mock_repo.get_all_paginated.assert_called_once_with(10, 5, include_inactive=False)
 
 
 @pytest.mark.asyncio
@@ -190,3 +190,40 @@ async def test_update_template_duplicate_name(mock_template: DialogTemplate) -> 
 
     with pytest.raises(TemplateNameExistsError):
         await service.update_template(1, data)
+
+
+@pytest.mark.asyncio
+async def test_restore_template_success(mock_template: DialogTemplate) -> None:
+    """Soft-deleted template can be re-activated via restore_template."""
+    mock_template.is_active = False
+    mock_repo = MagicMock(spec=TemplateRepository)
+    mock_repo.get_by_id = AsyncMock(return_value=mock_template)
+    mock_repo.restore = AsyncMock(return_value=True)
+
+    service = TemplateService(template_repository=mock_repo)
+    result = await service.restore_template(1)
+
+    assert result is True
+    mock_repo.restore.assert_called_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_restore_template_not_found_raises() -> None:
+    mock_repo = MagicMock(spec=TemplateRepository)
+    mock_repo.get_by_id = AsyncMock(return_value=None)
+
+    service = TemplateService(template_repository=mock_repo)
+    with pytest.raises(TemplateNotFoundError):
+        await service.restore_template(999)
+
+
+@pytest.mark.asyncio
+async def test_restore_template_already_active_returns_false(mock_template: DialogTemplate) -> None:
+    mock_template.is_active = True
+    mock_repo = MagicMock(spec=TemplateRepository)
+    mock_repo.get_by_id = AsyncMock(return_value=mock_template)
+
+    service = TemplateService(template_repository=mock_repo)
+    result = await service.restore_template(1)
+
+    assert result is False

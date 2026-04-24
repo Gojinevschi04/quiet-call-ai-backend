@@ -30,13 +30,24 @@ class TaskRepository(Repository):
         limit: int = 20,
         offset: int = 0,
         status: TaskStatus | None = None,
+        language: str | None = None,
     ) -> tuple[Sequence[Task], int]:
+        from app.modules.templates.models import DialogTemplate
+
         query = select(Task).where(Task.user_id == user_id)
         count_query = select(func.count()).select_from(Task).where(Task.user_id == user_id)
 
         if status:
             query = query.where(Task.status == status)
             count_query = count_query.where(Task.status == status)
+
+        if language:
+            query = query.join(DialogTemplate, DialogTemplate.id == Task.template_id).where(
+                DialogTemplate.language == language
+            )
+            count_query = count_query.join(
+                DialogTemplate, DialogTemplate.id == Task.template_id
+            ).where(DialogTemplate.language == language)
 
         query = query.order_by(Task.created_at.desc()).offset(offset).limit(limit)
 
@@ -85,13 +96,24 @@ class TaskRepository(Repository):
         limit: int = 50,
         offset: int = 0,
         status: TaskStatus | None = None,
+        language: str | None = None,
     ) -> tuple[Sequence[Task], int]:
+        from app.modules.templates.models import DialogTemplate
+
         query = select(Task)
         count_query = select(func.count()).select_from(Task)
 
         if status:
             query = query.where(Task.status == status)
             count_query = count_query.where(Task.status == status)
+
+        if language:
+            query = query.join(DialogTemplate, DialogTemplate.id == Task.template_id).where(
+                DialogTemplate.language == language
+            )
+            count_query = count_query.join(
+                DialogTemplate, DialogTemplate.id == Task.template_id
+            ).where(DialogTemplate.language == language)
 
         query = query.order_by(Task.created_at.desc()).offset(offset).limit(limit)
 

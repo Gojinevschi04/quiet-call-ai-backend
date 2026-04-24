@@ -51,7 +51,13 @@ async def test_create_task_template_not_found(authenticated_client: AsyncClient)
 
 @pytest.mark.asyncio
 async def test_get_tasks(authenticated_client: AsyncClient) -> None:
-    with patch("app.modules.tasks.service.TaskService.get_tasks") as mock_get:
+    with (
+        patch("app.modules.tasks.service.TaskService.get_tasks") as mock_get,
+        patch(
+            "app.modules.templates.repository.TemplateRepository.get_names_by_ids",
+            new_callable=AsyncMock,
+        ) as mock_names,
+    ):
         mock_task = MagicMock(retry_count=0, next_retry_at=None, user_rating=None, user_rating_comment=None)
         mock_task.id = 1
         mock_task.target_phone = "+37312345678"
@@ -64,18 +70,27 @@ async def test_get_tasks(authenticated_client: AsyncClient) -> None:
         mock_task.created_at = "2026-01-01T00:00:00"
         mock_task.updated_at = "2026-01-01T00:00:00"
         mock_get.return_value = ([mock_task], 1)
+        mock_names.return_value = {1: "Make appointment"}
 
         response = await authenticated_client.get("/tasks/")
         assert response.status_code == 200
         data = response.json()
         assert data["total"] == 1
         assert len(data["items"]) == 1
+        assert data["items"][0]["template_name"] == "Make appointment"
 
 
 @pytest.mark.asyncio
 async def test_get_tasks_with_status_filter(authenticated_client: AsyncClient) -> None:
-    with patch("app.modules.tasks.service.TaskService.get_tasks") as mock_get:
+    with (
+        patch("app.modules.tasks.service.TaskService.get_tasks") as mock_get,
+        patch(
+            "app.modules.templates.repository.TemplateRepository.get_names_by_ids",
+            new_callable=AsyncMock,
+        ) as mock_names,
+    ):
         mock_get.return_value = ([], 0)
+        mock_names.return_value = {}
         response = await authenticated_client.get("/tasks/?status=completed")
         assert response.status_code == 200
         assert response.json()["total"] == 0
