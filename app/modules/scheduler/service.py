@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.database import engine
+from app.core.database import async_session
 from app.core.logging import get_logger
 from app.modules.tasks.models import Task
 from app.modules.tasks.schema import TaskStatus
@@ -125,12 +125,12 @@ async def _process_due_tasks() -> None:
     """Find and execute all due scheduled tasks."""
     from app.modules.scheduler.task_executor import execute_due_task
 
-    async with AsyncSession(engine) as session:
+    async with async_session() as session:
         due_tasks = await get_due_tasks(session)
 
     for task_id, user_id in due_tasks:
         try:
-            async with AsyncSession(engine) as session:
+            async with async_session() as session:
                 await transition_task(session, task_id)
             await execute_due_task(task_id, user_id)
         except Exception as process_error:
@@ -147,7 +147,7 @@ async def _schedule_new_retry_windows() -> None:
     (say, with retry_count=0) gets next_retry_at=10:01 before we check for
     tasks due for retry.
     """
-    async with AsyncSession(engine) as session:
+    async with async_session() as session:
         result = await session.exec(
             select(Task.id, Task.error_reason, Task.retry_count).where(
                 Task.status == TaskStatus.FAILED,
@@ -168,12 +168,12 @@ async def _process_retryable_tasks() -> None:
 
     await _schedule_new_retry_windows()
 
-    async with AsyncSession(engine) as session:
+    async with async_session() as session:
         retryable_tasks = await get_retryable_failed_tasks(session)
 
     for task_id, user_id in retryable_tasks:
         try:
-            async with AsyncSession(engine) as session:
+            async with async_session() as session:
                 await mark_task_for_retry(session, task_id)
             await execute_due_task(task_id, user_id)
         except Exception as retry_error:
@@ -189,7 +189,7 @@ async def _process_stuck_in_progress_tasks() -> None:
     Happens when API restarts mid-call or the bridge crashes without running finalize.
     """
     cutoff = datetime.now() - timedelta(minutes=MAX_IN_PROGRESS_MINUTES)
-    async with AsyncSession(engine) as session:
+    async with async_session() as session:
         result = await session.exec(
             select(Task).where(
                 Task.status == TaskStatus.IN_PROGRESS,

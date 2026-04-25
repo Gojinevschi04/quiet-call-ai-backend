@@ -447,10 +447,13 @@ async def test_twilio_status_callback_signature_check_runs_before_db_lookup() ->
     unauthenticated attacker can't probe which task_ids exist via response timing
     or differential DB error.
     """
-    from unittest.mock import AsyncMock, patch as real_patch
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as real_patch
+
+    from httpx import ASGITransport, AsyncClient
+
     from app.main import app
     from app.modules.webhooks.views import verify_twilio_signature
-    from httpx import ASGITransport, AsyncClient
 
     if verify_twilio_signature in app.dependency_overrides:
         del app.dependency_overrides[verify_twilio_signature]

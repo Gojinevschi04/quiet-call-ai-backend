@@ -12,7 +12,7 @@ def _stub_task_repo(task_mock: MagicMock | None = None) -> MagicMock:
 
 
 def _patch_session_and_task_repo(task: MagicMock | None) -> tuple:
-    session_patch = patch("app.modules.scheduler.task_executor.AsyncSession")
+    session_patch = patch("app.modules.scheduler.task_executor.async_session")
     task_repo_patch = patch(
         "app.modules.tasks.repository.TaskRepository",
         return_value=_stub_task_repo(task),

@@ -1,7 +1,5 @@
 import time
 
-import pytest
-
 from app.core.rate_limit import MAX_TRACKED_IPS, RateLimitMiddleware
 
 

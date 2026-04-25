@@ -190,6 +190,23 @@ async def test_get_by_session_id(mock_session: MagicMock, mock_log_lines: list[L
 
 
 @pytest.mark.asyncio
+async def test_get_by_session_id_sorts_by_id_not_timestamp(mock_session: MagicMock) -> None:
+    """Regression: log lines must be ordered by id (insertion/conversation order), not
+    by timestamp — timestamps reflect the moment an async OpenAI event arrived, which can
+    be out-of-order when Whisper user transcription completes after the next agent turn."""
+    mock_result = MagicMock()
+    mock_result.all.return_value = []
+    mock_session.exec = AsyncMock(return_value=mock_result)
+
+    repo = LogLineRepository(session=mock_session)
+    await repo.get_by_session_id(1)
+
+    rendered_sql = str(mock_session.exec.call_args[0][0]).lower()
+    assert "order by log_line.id" in rendered_sql
+    assert "order by log_line.timestamp" not in rendered_sql
+
+
+@pytest.mark.asyncio
 async def test_get_by_session_id_empty(mock_session: MagicMock) -> None:
     mock_result = MagicMock()
     mock_result.all.return_value = []

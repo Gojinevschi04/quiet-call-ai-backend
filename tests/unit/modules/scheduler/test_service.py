@@ -222,7 +222,7 @@ async def test_process_stuck_in_progress_tasks_flips_old_tasks_to_failed() -> No
     mock_session.add = MagicMock()
     mock_session.commit = AsyncMock()
 
-    with patch("app.modules.scheduler.service.AsyncSession") as mock_session_cls:
+    with patch("app.modules.scheduler.service.async_session") as mock_session_cls:
         mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -244,7 +244,7 @@ async def test_process_stuck_in_progress_tasks_no_stuck_does_nothing() -> None:
     mock_session.add = MagicMock()
     mock_session.commit = AsyncMock()
 
-    with patch("app.modules.scheduler.service.AsyncSession") as mock_session_cls:
+    with patch("app.modules.scheduler.service.async_session") as mock_session_cls:
         mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -275,7 +275,7 @@ async def test_process_stuck_in_progress_tasks_preserves_existing_error_reason()
     mock_session.add = MagicMock()
     mock_session.commit = AsyncMock()
 
-    with patch("app.modules.scheduler.service.AsyncSession") as mock_session_cls:
+    with patch("app.modules.scheduler.service.async_session") as mock_session_cls:
         mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -306,7 +306,7 @@ async def test_process_due_tasks_transitions_and_executes_each() -> None:
     mock_session.commit = AsyncMock()
 
     with (
-        patch("app.modules.scheduler.service.AsyncSession") as mock_session_cls,
+        patch("app.modules.scheduler.service.async_session") as mock_session_cls,
         patch("app.modules.scheduler.task_executor.execute_due_task") as mock_execute,
     ):
         mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -335,7 +335,7 @@ async def test_process_due_tasks_swallows_per_task_errors() -> None:
         raise RuntimeError(f"boom {task_id}")
 
     with (
-        patch("app.modules.scheduler.service.AsyncSession") as mock_session_cls,
+        patch("app.modules.scheduler.service.async_session") as mock_session_cls,
         patch("app.modules.scheduler.task_executor.execute_due_task", new=_fail_execute),
     ):
         mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -372,7 +372,7 @@ async def test_process_retryable_tasks_resets_and_executes() -> None:
     mock_session.commit = AsyncMock()
 
     with (
-        patch("app.modules.scheduler.service.AsyncSession") as mock_session_cls,
+        patch("app.modules.scheduler.service.async_session") as mock_session_cls,
         patch("app.modules.scheduler.task_executor.execute_due_task", new=AsyncMock()) as mock_execute,
     ):
         mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -392,7 +392,7 @@ async def test_process_retryable_tasks_empty_is_noop() -> None:
     mock_session.exec = AsyncMock(return_value=empty_result)
 
     with (
-        patch("app.modules.scheduler.service.AsyncSession") as mock_session_cls,
+        patch("app.modules.scheduler.service.async_session") as mock_session_cls,
         patch("app.modules.scheduler.task_executor.execute_due_task", new=AsyncMock()) as mock_execute,
     ):
         mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -567,7 +567,7 @@ async def test_schedule_new_retry_windows_sets_next_retry_for_eligible_tasks() -
     mock_session.add = MagicMock()
     mock_session.commit = AsyncMock()
 
-    with patch("app.modules.scheduler.service.AsyncSession") as mock_session_cls:
+    with patch("app.modules.scheduler.service.async_session") as mock_session_cls:
         mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -590,7 +590,7 @@ async def test_schedule_new_retry_windows_skips_tasks_at_max_retries() -> None:
     mock_session.add = MagicMock()
     mock_session.commit = AsyncMock()
 
-    with patch("app.modules.scheduler.service.AsyncSession") as mock_session_cls:
+    with patch("app.modules.scheduler.service.async_session") as mock_session_cls:
         mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 

@@ -112,7 +112,12 @@ class LogLineRepository(Repository):
         await self._session.commit()
 
     async def get_by_session_id(self, session_id: int) -> Sequence[LogLine]:
+        # Sort by id (insertion order) instead of timestamp — timestamps are the moment
+        # OpenAI events arrive, which can be out-of-order because Whisper user transcription
+        # completes asynchronously (often after the next agent turn's transcript is done).
+        # Rows are inserted in conversation order (see get_ordered_transcript), so id
+        # preserves the real back-and-forth sequence.
         result = await self._session.exec(
-            select(LogLine).where(LogLine.session_id == session_id).order_by(LogLine.timestamp)
+            select(LogLine).where(LogLine.session_id == session_id).order_by(LogLine.id)
         )
         return result.all()

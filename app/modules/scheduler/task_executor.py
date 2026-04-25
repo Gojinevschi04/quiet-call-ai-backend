@@ -4,9 +4,7 @@ Creates its own DB session and dependencies to avoid
 sharing state with the scheduler polling session.
 """
 
-from sqlmodel.ext.asyncio.session import AsyncSession
-
-from app.core.database import engine
+from app.core.database import async_session
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -34,7 +32,10 @@ async def execute_due_task(task_id: int, user_id: int) -> None:
     from app.modules.users.repository import UserRepository
 
     semaphore = get_call_semaphore()
-    async with semaphore, AsyncSession(engine) as session:
+    # Use the shared factory (expire_on_commit=False) so attribute access on ORM
+    # instances after commit doesn't trigger a lazy-load — async SQLAlchemy can't
+    # lazy-load in arbitrary contexts and fails with MissingGreenlet.
+    async with semaphore, async_session() as session:
         task_repo = TaskRepository(session=session)
         repos = {
             "task_repository": task_repo,
@@ -57,6 +58,26 @@ async def execute_due_task(task_id: int, user_id: int) -> None:
 
         try:
             result = await manager.execute_task(task_id, user_id)
-            logger.info("Task %d auto-executed with status: %s", task_id, result.status)
-        except Exception as task_error:
-            logger.error("Task %d auto-execution failed: %s", task_id, str(task_error))
+            # Access status via a try/except — instance may be expired after the
+            # session commits in execute_task (in which case attribute access would
+            # trigger a lazy reload and fail in async context).
+            try:
+                result_status = result.status
+            except Exception:
+                result_status = "executed (status refresh skipped)"
+            logger.info("Task %d auto-executed with status: %s", task_id, result_status)
+        except Exception:
+            logger.exception("Task %d auto-execution failed", task_id)
+            # Mark the task FAILED so it doesn't stay SCHEDULED forever — the scheduler
+            # janitor handles stuck IN_PROGRESS, but a pre-claim failure leaves the task
+            # as-is. Explicitly flip to FAILED with the error reason.
+            try:
+                from app.modules.tasks.schema import TaskStatus
+
+                current = await task_repo.get_by_id_any_user(task_id)
+                if current and current.status not in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                    current.status = TaskStatus.FAILED
+                    current.error_reason = "Auto-execution error (see worker logs)"
+                    await task_repo.update(current)
+            except Exception:
+                logger.exception("Failed to mark task %d as FAILED after error", task_id)
