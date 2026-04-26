@@ -2,7 +2,9 @@
 
 FastAPI async backend for **Quiet Call AI**, a voice assistant SaaS that automates repetitive phone calls using AI (OpenAI Realtime for end-to-end audio, OpenAI Chat/STT/TTS for fallback, Twilio for VoIP).
 
-Frontend repository: [quiet-call-ai-frontend](https://disa.codestorage.space/ana.gojinevschi/quiet-call-ai-frontend)
+Repositories:
+- Backend (this repo) — GitHub: [Gojinevschi04/quiet-call-ai-backend](https://github.com/Gojinevschi04/quiet-call-ai-backend) · UTM DISA mirror: [ana.gojinevschi/quiet-call-ai](https://disa.codestorage.space/ana.gojinevschi/quiet-call-ai)
+- Frontend — GitHub: [Gojinevschi04/quiet-call-ai-frontend](https://github.com/Gojinevschi04/quiet-call-ai-frontend) · UTM DISA mirror: [ana.gojinevschi/quiet-call-ai-frontend](https://disa.codestorage.space/ana.gojinevschi/quiet-call-ai-frontend)
 
 ---
 
@@ -77,9 +79,13 @@ Frontend repository: [quiet-call-ai-frontend](https://disa.codestorage.space/ana
 ### Installation
 
 ```bash
-# Clone the repo
-git clone https://disa.codestorage.space/ana.gojinevschi/quiet-call-ai.git
-cd quiet-call-ai
+# Clone the repo (GitHub)
+git clone https://github.com/Gojinevschi04/quiet-call-ai-backend.git
+cd quiet-call-ai-backend
+
+# Or clone from the UTM DISA mirror
+# git clone https://disa.codestorage.space/ana.gojinevschi/quiet-call-ai.git
+# cd quiet-call-ai
 
 # Install dependencies
 poetry install
