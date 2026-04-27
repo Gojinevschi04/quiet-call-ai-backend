@@ -275,3 +275,60 @@ def test_assistant_name_appears_in_identity_question_guidance() -> None:
         assistant_name="Ana",
     )
     assert "I'm Ana, an automated assistant" in prompt
+
+
+def test_prompt_forbids_collecting_data_from_other_party() -> None:
+    """Regression: AI must not flip into provider-role and ask for caller-identifying fields.
+
+    Observed failure mode: when slot_data is incomplete and the call goes noisy, the model
+    started asking the support agent for the subscriber's name and address. The NEVER block
+    must explicitly forbid the most common field-collecting phrasings.
+    """
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Register a complaint and get a reference number.",
+        slot_data={"customer_name": "Andreea", "service_name": "Starnet"},
+        language="ro",
+        use_function_tool=True,
+    )
+    assert "COLLECTING data FROM the other party" in prompt
+    assert "What is your name?" in prompt
+    assert "fill in the form" in prompt
+    assert "register your complaint" in prompt
+    assert "you do NOT collect" in prompt
+
+
+def test_prompt_has_missing_caller_info_section() -> None:
+    """Regression: prompt must tell the AI what to do when it lacks self-identifying info,
+    so it does NOT extract it from the service provider."""
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Register a complaint.",
+        slot_data={"customer_name": "Andreea"},
+        language="ro",
+        use_function_tool=True,
+    )
+    assert "MISSING CALLER INFO" in prompt
+    assert "anti-role-flip" in prompt
+    assert "missing required caller info" in prompt
+    # The AI may ask about the transaction, but NOT for caller-identifying fields.
+    assert "transaction itself" in prompt
+    assert "identifies YOU" in prompt
+
+
+def test_prompt_ends_with_per_turn_role_anchor() -> None:
+    """Regression: a short anchor at the very end re-states the caller-vs-provider role.
+    Models drift over long turns; a final reminder reduces role-hopping recurrence."""
+    prompt = PromptBuilder.build_system_prompt(
+        base_script="Confirm.",
+        slot_data={"guest_name": "Eva"},
+        language="en",
+    )
+    assert "REMEMBER ON EVERY TURN" in prompt
+    # Must literally appear after the STYLE line so it's the last thing the model sees.
+    style_index = prompt.index("STYLE: Keep replies")
+    anchor_index = prompt.index("REMEMBER ON EVERY TURN")
+    assert anchor_index > style_index
+    assert (
+        "You do\nNOT collect information from them" in prompt
+        or "do\nNOT collect" in prompt
+        or ("NOT collect information from them" in prompt)
+    )
