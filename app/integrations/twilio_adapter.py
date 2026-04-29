@@ -165,6 +165,9 @@ class TwilioAdapter(IVoiceProvider):
         _gather_results[call_sid] = future
 
         response = VoiceResponse()
+        # Say outside Gather so the mic only opens after TTS finishes — prevents
+        # Twilio's STT from transcribing the AI's own voice as caller speech.
+        response.say(clean_text, voice=lang_cfg["voice"], language=lang_cfg["say_lang"])
         gather = Gather(
             input="speech",
             action=f"{callback_url}/gather",
@@ -172,7 +175,6 @@ class TwilioAdapter(IVoiceProvider):
             speech_timeout="auto",
             language=lang_cfg["gather_lang"],
         )
-        gather.say(clean_text, voice=lang_cfg["voice"], language=lang_cfg["say_lang"])
         response.append(gather)
         no_response = {"en": "I didn't hear a response.", "ru": "Я не услышал ответа.", "ro": "Nu am auzit un răspuns."}
         response.say(no_response.get(language, no_response["en"]), voice=lang_cfg["voice"])
@@ -222,6 +224,7 @@ class TwilioAdapter(IVoiceProvider):
     def generate_gather_twiml(audio_text: str, callback_url: str) -> str:
         """Generate TwiML with Say + Gather for the webhook response."""
         response = VoiceResponse()
+        response.say(audio_text, voice="Polly.Joanna")
         gather = Gather(
             input="speech",
             action=f"{callback_url}/gather",
@@ -229,7 +232,6 @@ class TwilioAdapter(IVoiceProvider):
             speech_timeout="auto",
             language="en-US",
         )
-        gather.say(audio_text, voice="Polly.Joanna")
         response.append(gather)
         response.say("I didn't hear anything. Goodbye.", voice="Polly.Joanna")
         return str(response)
