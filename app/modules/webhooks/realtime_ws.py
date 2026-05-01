@@ -103,27 +103,32 @@ TRANSCRIPTION_HINT_MAX_CHARS = 500
 
 
 def _build_transcription_hint(slot_data: dict[str, str], assistant_name: str | None) -> str:
-    """Build a Whisper/gpt-4o-transcribe prompt hint from proper nouns and values
-    that are likely to appear in the caller's reply (names, dates, services).
+    """Build a Whisper/gpt-4o-transcribe prompt hint from proper-noun-like slot values.
 
-    Improves STT accuracy on short/noisy user utterances by biasing the transcriber
-    toward words already present in the task context.
+    Only single-token, capitalized or digit-leading values ≤ 30 chars are included.
+    Multi-word descriptive phrases are excluded because Whisper-family models echo
+    long prompts back as "transcription" when the audio is silent or unintelligible,
+    leaking task inputs into the interlocutor's transcript.
     """
     fragments: list[str] = []
     if assistant_name:
         fragments.append(assistant_name)
     for value in slot_data.values():
-        if isinstance(value, str) and value.strip():
-            fragments.append(value.strip())
+        if not isinstance(value, str):
+            continue
+        v = value.strip()
+        if not v or len(v) > 30 or " " in v:
+            continue
+        if not (v[0].isupper() or v[0].isdigit()):
+            continue
+        fragments.append(v)
     if not fragments:
         return ""
     hint = ", ".join(fragments)
     return hint[:TRANSCRIPTION_HINT_MAX_CHARS]
 
 
-async def _build_system_prompt_for_task(
-    task_id: int, language: str
-) -> tuple[str, str] | None:
+async def _build_system_prompt_for_task(task_id: int, language: str) -> tuple[str, str] | None:
     """Rebuild system prompt + transcription hint server-side from the DB.
 
     The prompt is too long to fit in TwiML <Parameter> (Twilio caps TwiML at 4000
@@ -326,7 +331,7 @@ async def _classify_outcome_from_transcript(
     system_prompt = (
         "You are an evaluator. Given a phone call transcript and the caller's objective, "
         "decide the outcome. Respond with a SINGLE JSON object, no prose, "
-        "with keys 'status' and 'reason' (one short sentence in {language}).\n"
+        f"with keys 'status' and 'reason' (one short sentence in {language}).\n"
         "'status' must be one of:\n"
         "  - 'achieved': the objective was fully met (booking confirmed, info obtained, etc.)\n"
         "  - 'deferred': the conversation was productive but the objective was NOT met and needs "
@@ -335,7 +340,7 @@ async def _classify_outcome_from_transcript(
         "  - 'failed': hard failure (wrong number, record not found, voicemail, unintelligible, "
         "technical error).\n"
         "  - 'rejected': the other party refused explicitly (opt-out, remove from list)."
-    ).format(language=language)
+    )
     user_message = f"OBJECTIVE:\n{objective}\n\nTRANSCRIPT:\n{conversation_text}"
 
     try:
