@@ -1,31 +1,37 @@
 # Quiet Call AI — Backend
 
-FastAPI async backend for **Quiet Call AI**, a voice assistant SaaS that automates repetitive phone calls using AI (OpenAI Realtime for end-to-end audio, OpenAI Chat/STT/TTS for fallback, Twilio for VoIP).
+FastAPI async backend for **Quiet Call AI**, a voice assistant SaaS that automates repetitive phone calls using AI (
+OpenAI Realtime for end-to-end audio, OpenAI Chat/STT/TTS for fallback, Twilio for VoIP).
 
 Repositories:
-- Backend (this repo) — GitHub: [Gojinevschi04/quiet-call-ai-backend](https://github.com/Gojinevschi04/quiet-call-ai-backend) · UTM DISA mirror: [ana.gojinevschi/quiet-call-ai](https://disa.codestorage.space/ana.gojinevschi/quiet-call-ai)
-- Frontend — GitHub: [Gojinevschi04/quiet-call-ai-frontend](https://github.com/Gojinevschi04/quiet-call-ai-frontend) · UTM DISA mirror: [ana.gojinevschi/quiet-call-ai-frontend](https://disa.codestorage.space/ana.gojinevschi/quiet-call-ai-frontend)
+
+- Backend (this repo) —
+  GitHub: [Gojinevschi04/quiet-call-ai-backend](https://github.com/Gojinevschi04/quiet-call-ai-backend) · UTM DISA
+  mirror: [ana.gojinevschi/quiet-call-ai](https://disa.codestorage.space/ana.gojinevschi/quiet-call-ai)
+- Frontend — GitHub: [Gojinevschi04/quiet-call-ai-frontend](https://github.com/Gojinevschi04/quiet-call-ai-frontend) ·
+  UTM DISA
+  mirror: [ana.gojinevschi/quiet-call-ai-frontend](https://disa.codestorage.space/ana.gojinevschi/quiet-call-ai-frontend)
 
 ---
 
 ## Tech Stack
 
-| Technology | Purpose |
-|------------|---------|
-| **Python 3.13** | Language |
-| **FastAPI** | Async web framework |
-| **SQLModel + SQLAlchemy** | ORM (async, with asyncpg driver) |
-| **PostgreSQL 17** | Database (via Docker) |
-| **Alembic** | Database migrations |
-| **Poetry** | Dependency management |
-| **PyJWT** | JWT authentication (HS256) |
-| **Twilio** | VoIP — outbound calls + Media Streams (bidirectional audio over WebSocket) |
-| **OpenAI Realtime API** | End-to-end voice agent (`gpt-realtime`, μ-law 8kHz, semantic VAD) |
-| **OpenAI Chat/STT/TTS** | Legacy dialog path, summaries, outcome classification |
-| **aiosmtplib** | Async email notifications (branded templates, en/ru/ro) |
-| **httpx** | Outbound webhook dispatcher |
-| **WebSockets** | Twilio Media Streams + real-time call events to the UI |
-| **Black + Ruff + MyPy** | Formatting, linting, type checking |
+| Technology                | Purpose                                                                    |
+|---------------------------|----------------------------------------------------------------------------|
+| **Python 3.13**           | Language                                                                   |
+| **FastAPI**               | Async web framework                                                        |
+| **SQLModel + SQLAlchemy** | ORM (async, with asyncpg driver)                                           |
+| **PostgreSQL 17**         | Database (via Docker)                                                      |
+| **Alembic**               | Database migrations                                                        |
+| **Poetry**                | Dependency management                                                      |
+| **PyJWT**                 | JWT authentication (HS256)                                                 |
+| **Twilio**                | VoIP — outbound calls + Media Streams (bidirectional audio over WebSocket) |
+| **OpenAI Realtime API**   | End-to-end voice agent (`gpt-realtime`, μ-law 8kHz, semantic VAD)          |
+| **OpenAI Chat/STT/TTS**   | Legacy dialog path, summaries, outcome classification                      |
+| **aiosmtplib**            | Async email notifications (branded templates, en/ru/ro)                    |
+| **httpx**                 | Outbound webhook dispatcher                                                |
+| **WebSockets**            | Twilio Media Streams + real-time call events to the UI                     |
+| **Black + Ruff + MyPy**   | Formatting, linting, type checking                                         |
 
 ---
 
@@ -108,9 +114,10 @@ make db.seed.demo
 ```
 
 This starts 3 containers:
-- **qc_api** — FastAPI server at `http://localhost:8000`
-- **qc_worker** — Background task scheduler
-- **qc_postgres** — PostgreSQL database
+
+- **quiet_call_api** — FastAPI server at `http://localhost:8000`
+- **quiet_call_worker** — Background task scheduler
+- **quiet_call_db** — PostgreSQL database
 
 API docs: `http://localhost:8000/docs`
 
@@ -122,7 +129,7 @@ API docs: `http://localhost:8000/docs`
 
 ```bash
 # Start PostgreSQL container only
-docker compose up qc_postgres -d
+docker compose up quiet_call_db -d
 
 # Run migrations
 make db.up
@@ -281,14 +288,14 @@ for retries after `[REALTIME_INIT_FAILED]`.
 
 Connect: `ws://host/ws/calls/{task_id}?token=JWT`
 
-| Event | Data | When |
-|-------|------|------|
-| `status_change` | `{status}` | Task moves to IN_PROGRESS |
-| `dialing` | `{phone}` | Call initiated |
-| `call_answered` | — | Interlocutor picks up |
-| `message` | `{speaker, text, intent?}` | Each transcript delta |
-| `generating_summary` | — | Call ended, AI summarizing |
-| `call_ended` | `{status, summary, error_reason}` | Final result |
+| Event                | Data                              | When                       |
+|----------------------|-----------------------------------|----------------------------|
+| `status_change`      | `{status}`                        | Task moves to IN_PROGRESS  |
+| `dialing`            | `{phone}`                         | Call initiated             |
+| `call_answered`      | —                                 | Interlocutor picks up      |
+| `message`            | `{speaker, text, intent?}`        | Each transcript delta      |
+| `generating_summary` | —                                 | Call ended, AI summarizing |
+| `call_ended`         | `{status, summary, error_reason}` | Final result               |
 
 Owners see only their own tasks. Admins can subscribe to any task.
 
@@ -297,112 +304,122 @@ Owners see only their own tasks. Admins can subscribe to any task.
 ## API Endpoints (53 total)
 
 ### Auth (`/auth`) — Public
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/auth/register` | Create account, send welcome email, return tokens |
-| POST | `/auth/login` | Get JWT access + refresh tokens |
-| POST | `/auth/refresh` | Refresh access token |
-| POST | `/auth/reset-password` | Request password reset email |
-| POST | `/auth/reset-password/confirm` | Confirm password reset |
+
+| Method | Endpoint                       | Description                                       |
+|--------|--------------------------------|---------------------------------------------------|
+| POST   | `/auth/register`               | Create account, send welcome email, return tokens |
+| POST   | `/auth/login`                  | Get JWT access + refresh tokens                   |
+| POST   | `/auth/refresh`                | Refresh access token                              |
+| POST   | `/auth/reset-password`         | Request password reset email                      |
+| POST   | `/auth/reset-password/confirm` | Confirm password reset                            |
 
 ### Users (`/users`) — Authenticated
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/users/me` | Get profile (email, phone, notification pref, `webhook_url`) |
-| GET | `/users/me/usage` | Aggregate token counts + estimated USD cost for current user |
-| PUT | `/users/me` | Update email / phone / notification toggle / webhook URL |
-| POST | `/users/me/change-password` | Change password (requires reauth) |
+
+| Method | Endpoint                    | Description                                                  |
+|--------|-----------------------------|--------------------------------------------------------------|
+| GET    | `/users/me`                 | Get profile (email, phone, notification pref, `webhook_url`) |
+| GET    | `/users/me/usage`           | Aggregate token counts + estimated USD cost for current user |
+| PUT    | `/users/me`                 | Update email / phone / notification toggle / webhook URL     |
+| POST   | `/users/me/change-password` | Change password (requires reauth)                            |
 
 ### Users admin (`/users`) — Admin only
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/users/` | Create user |
-| GET | `/users/` | List all users (paginated) |
-| GET | `/users/{id}` | User detail |
-| PUT | `/users/{id}` | Update user |
-| DELETE | `/users/{id}` | Delete user (cascade) |
+
+| Method | Endpoint      | Description                |
+|--------|---------------|----------------------------|
+| POST   | `/users/`     | Create user                |
+| GET    | `/users/`     | List all users (paginated) |
+| GET    | `/users/{id}` | User detail                |
+| PUT    | `/users/{id}` | Update user                |
+| DELETE | `/users/{id}` | Delete user (cascade)      |
 
 ### Tasks (`/tasks`) — Authenticated
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/tasks/` | Create a new call task |
-| GET | `/tasks/` | List tasks (status filter, pagination) |
-| GET | `/tasks/export` | Export tasks as CSV download |
-| GET | `/tasks/stats` | Task counts by status |
-| GET | `/tasks/{id}` | Task detail (includes `template_name`, retry info, user rating) |
-| PUT | `/tasks/{id}` | Edit pending/scheduled task |
-| POST | `/tasks/{id}/cancel` | Cancel task (admin can cancel any) |
-| POST | `/tasks/{id}/rate` | Rate a completed/failed task (1-5 + comment) |
-| POST | `/tasks/{id}/duplicate` | Clone task's template + slot_data for a new phone number |
-| POST | `/tasks/{id}/retry` | Retry a failed task manually |
-| POST | `/tasks/{id}/execute` | Execute task (non-blocking, admin can execute any) |
+
+| Method | Endpoint                | Description                                                     |
+|--------|-------------------------|-----------------------------------------------------------------|
+| POST   | `/tasks/`               | Create a new call task                                          |
+| GET    | `/tasks/`               | List tasks (status filter, pagination)                          |
+| GET    | `/tasks/export`         | Export tasks as CSV download                                    |
+| GET    | `/tasks/stats`          | Task counts by status                                           |
+| GET    | `/tasks/{id}`           | Task detail (includes `template_name`, retry info, user rating) |
+| PUT    | `/tasks/{id}`           | Edit pending/scheduled task                                     |
+| POST   | `/tasks/{id}/cancel`    | Cancel task (admin can cancel any)                              |
+| POST   | `/tasks/{id}/rate`      | Rate a completed/failed task (1-5 + comment)                    |
+| POST   | `/tasks/{id}/duplicate` | Clone task's template + slot_data for a new phone number        |
+| POST   | `/tasks/{id}/retry`     | Retry a failed task manually                                    |
+| POST   | `/tasks/{id}/execute`   | Execute task (non-blocking, admin can execute any)              |
 
 ### Calls (`/tasks`) — Authenticated
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/tasks/{id}/transcript` | Structured transcript (session + log lines) |
-| GET | `/tasks/{id}/transcript/download` | Download transcript as .txt |
-| GET | `/tasks/{id}/session` | Call session metadata (duration, recording URI, tokens) |
-| GET | `/tasks/{id}/recording` | Stream/download call recording (local MP3 or Twilio URL) |
+
+| Method | Endpoint                          | Description                                              |
+|--------|-----------------------------------|----------------------------------------------------------|
+| GET    | `/tasks/{id}/transcript`          | Structured transcript (session + log lines)              |
+| GET    | `/tasks/{id}/transcript/download` | Download transcript as .txt                              |
+| GET    | `/tasks/{id}/session`             | Call session metadata (duration, recording URI, tokens)  |
+| GET    | `/tasks/{id}/recording`           | Stream/download call recording (local MP3 or Twilio URL) |
 
 ### Templates (`/templates`) — Mixed
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/templates/` | List templates (user) |
-| GET | `/templates/{id}` | Template detail (user) |
-| POST | `/templates/` | Create template (admin) |
-| PUT | `/templates/{id}` | Update template (admin) |
+
+| Method | Endpoint          | Description                  |
+|--------|-------------------|------------------------------|
+| GET    | `/templates/`     | List templates (user)        |
+| GET    | `/templates/{id}` | Template detail (user)       |
+| POST   | `/templates/`     | Create template (admin)      |
+| PUT    | `/templates/{id}` | Update template (admin)      |
 | DELETE | `/templates/{id}` | Soft-delete template (admin) |
 
 ### Admin (`/admin`) — Admin only
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/admin/stats` | System stats (users, tasks, calls) |
-| GET | `/admin/stats/extended` | Extended analytics (success rate per template, etc.) |
-| GET | `/admin/users` | List users (paginated) |
-| GET | `/admin/tasks` | List all tasks (paginated, status filter) |
-| PUT | `/admin/users/{id}` | Update user role |
-| DELETE | `/admin/users/{id}` | Delete user (cascade) |
-| GET | `/admin/audit/` | List audit log entries (paginated) |
+
+| Method | Endpoint                | Description                                          |
+|--------|-------------------------|------------------------------------------------------|
+| GET    | `/admin/stats`          | System stats (users, tasks, calls)                   |
+| GET    | `/admin/stats/extended` | Extended analytics (success rate per template, etc.) |
+| GET    | `/admin/users`          | List users (paginated)                               |
+| GET    | `/admin/tasks`          | List all tasks (paginated, status filter)            |
+| PUT    | `/admin/users/{id}`     | Update user role                                     |
+| DELETE | `/admin/users/{id}`     | Delete user (cascade)                                |
+| GET    | `/admin/audit/`         | List audit log entries (paginated)                   |
 
 ### Files (`/files`) — Authenticated (utility module)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/files/upload` | Upload a file |
-| GET | `/files/` | List files |
-| GET | `/files/{id}` | File metadata |
-| GET | `/files/{id}/download` | Download file |
-| DELETE | `/files/{id}` | Delete file |
+
+| Method | Endpoint               | Description   |
+|--------|------------------------|---------------|
+| POST   | `/files/upload`        | Upload a file |
+| GET    | `/files/`              | List files    |
+| GET    | `/files/{id}`          | File metadata |
+| GET    | `/files/{id}/download` | Download file |
+| DELETE | `/files/{id}`          | Delete file   |
 
 ### WebSocket
-| Endpoint | Description |
-|----------|-------------|
-| `ws /ws/calls/{task_id}?token=JWT` | Real-time call event stream (owner + admins) |
-| `ws /ws/media-stream` | Twilio Media Stream — bidirectional audio bridge (Twilio ⇄ OpenAI Realtime) |
+
+| Endpoint                           | Description                                                                 |
+|------------------------------------|-----------------------------------------------------------------------------|
+| `ws /ws/calls/{task_id}?token=JWT` | Real-time call event stream (owner + admins)                                |
+| `ws /ws/media-stream`              | Twilio Media Stream — bidirectional audio bridge (Twilio ⇄ OpenAI Realtime) |
 
 ### Other — Public
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/feedback/` | Submit feedback (emailed to admins) |
-| GET | `/health` | Health check (DB connectivity + version) |
-| POST | `/webhooks/calls/{id}` | Twilio initial callback |
-| POST | `/webhooks/calls/{id}/gather` | Twilio speech result (legacy path) |
-| POST | `/webhooks/calls/{id}/status` | Twilio call status (voicemail detection, duration) |
-| POST | `/webhooks/calls/{id}/recording` | Twilio recording URL |
+
+| Method | Endpoint                         | Description                                        |
+|--------|----------------------------------|----------------------------------------------------|
+| POST   | `/feedback/`                     | Submit feedback (emailed to admins)                |
+| GET    | `/health`                        | Health check (DB connectivity + version)           |
+| POST   | `/webhooks/calls/{id}`           | Twilio initial callback                            |
+| POST   | `/webhooks/calls/{id}/gather`    | Twilio speech result (legacy path)                 |
+| POST   | `/webhooks/calls/{id}/status`    | Twilio call status (voicemail detection, duration) |
+| POST   | `/webhooks/calls/{id}/recording` | Twilio recording URL                               |
 
 ---
 
 ## Database Models (at a glance)
 
-| Model | Table | Key fields |
-|---|---|---|
-| **User** | user | email, role, hashed_password, phone_number, email_notifications, **webhook_url** |
-| **Task** | task | target_phone, status, template_id, user_id, slot_data, scheduled_time, summary, error_reason, **retry_count**, **next_retry_at**, **user_rating**, **user_rating_comment** |
-| **DialogTemplate** | dialog_template | name, base_script, required_slots, language (en/ru/ro), is_active |
-| **CallSession** | call_session | task_id, start_time, duration, recording_uri, local_recording_path, **input_audio_tokens**, **output_audio_tokens**, **input_text_tokens**, **output_text_tokens** |
-| **LogLine** | log_line | session_id, timestamp, speaker, text, detected_intent |
-| **AuditLog** | audit_log | user_id, action, target_type, target_id, details |
-| **File** | file | filename, file_path, file_size, file_type, user_id |
+| Model              | Table           | Key fields                                                                                                                                                                 |
+|--------------------|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **User**           | user            | email, role, hashed_password, phone_number, email_notifications, **webhook_url**                                                                                           |
+| **Task**           | task            | target_phone, status, template_id, user_id, slot_data, scheduled_time, summary, error_reason, **retry_count**, **next_retry_at**, **user_rating**, **user_rating_comment** |
+| **DialogTemplate** | dialog_template | name, base_script, required_slots, language (en/ru/ro), is_active                                                                                                          |
+| **CallSession**    | call_session    | task_id, start_time, duration, recording_uri, local_recording_path, **input_audio_tokens**, **output_audio_tokens**, **input_text_tokens**, **output_text_tokens**         |
+| **LogLine**        | log_line        | session_id, timestamp, speaker, text, detected_intent                                                                                                                      |
+| **AuditLog**       | audit_log       | user_id, action, target_type, target_id, details                                                                                                                           |
+| **File**           | file            | filename, file_path, file_size, file_type, user_id                                                                                                                         |
 
 All models inherit `BaseModel` (provides `id`, `created_at`, `updated_at`). Bold fields were added
 post-v1 as features shipped.
@@ -411,29 +428,29 @@ post-v1 as features shipped.
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS` | PostgreSQL connection |
-| `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`, `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | JWT auth config |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | Twilio VoIP |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE`, `OPENAI_STT_MODEL` | OpenAI (legacy path + summaries) |
-| `USE_REALTIME_API` | `true` to use OpenAI Realtime + Twilio Media Streams; `false` for legacy `<Gather>`/`<Say>` |
-| `OPENAI_REALTIME_MODEL`, `OPENAI_REALTIME_VOICE` | Realtime agent model + voice |
-| `REALTIME_VAD_MODE`, `REALTIME_VAD_EAGERNESS` | Voice activity detection settings (`semantic_vad`, eagerness `low`/`medium`/`high`) |
-| `MAX_CONCURRENT_CALLS` | Process-local semaphore capping simultaneous outbound calls (default 10) |
-| `AI_DISCLOSURE_REQUIRED` | Require agent to disclose itself as automated in its opening line (EU AI Act / CA SB-1001 / TCPA) |
-| `MAX_CALL_DURATION_SECONDS` | Watchdog timer before graceful hangup (default 300) |
-| `CALL_WINDOW_START_HOUR`, `CALL_WINDOW_END_HOUR` | Permitted scheduling window, local time (default 9–20) |
-| `MAX_CALLS_PER_PHONE_PER_DAY` | Anti-spam per target number (default 3) |
-| `MAX_CALLS_PER_USER_PER_DAY` | Per-user quota (admins exempt, default 20) |
-| `TEST_PHONE_OVERRIDE` | When set, every call is redirected to this number (demos/testing) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | Email (SMTP) |
-| `EMAIL_FROM`, `EMAIL_FROM_NAME`, `EMAIL_ENABLED` | Email sender config |
-| `FEEDBACK_EMAILS` | Comma-separated emails for feedback forwarding |
-| `BASE_URL` | Backend base URL (used for Twilio callbacks + Media Stream WebSocket URL) |
-| `CORS_ORIGINS` | Allowed CORS origins (comma-separated) |
-| `RATE_LIMIT_PER_MINUTE` | API rate limit per IP (default 60) |
-| `LOG_LEVEL` | Logging level (default INFO) |
+| Variable                                                                                              | Description                                                                                       |
+|-------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS`                                                 | PostgreSQL connection                                                                             |
+| `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`, `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | JWT auth config                                                                                   |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`                                      | Twilio VoIP                                                                                       |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE`, `OPENAI_STT_MODEL`          | OpenAI (legacy path + summaries)                                                                  |
+| `USE_REALTIME_API`                                                                                    | `true` to use OpenAI Realtime + Twilio Media Streams; `false` for legacy `<Gather>`/`<Say>`       |
+| `OPENAI_REALTIME_MODEL`, `OPENAI_REALTIME_VOICE`                                                      | Realtime agent model + voice                                                                      |
+| `REALTIME_VAD_MODE`, `REALTIME_VAD_EAGERNESS`                                                         | Voice activity detection settings (`semantic_vad`, eagerness `low`/`medium`/`high`)               |
+| `MAX_CONCURRENT_CALLS`                                                                                | Process-local semaphore capping simultaneous outbound calls (default 10)                          |
+| `AI_DISCLOSURE_REQUIRED`                                                                              | Require agent to disclose itself as automated in its opening line (EU AI Act / CA SB-1001 / TCPA) |
+| `MAX_CALL_DURATION_SECONDS`                                                                           | Watchdog timer before graceful hangup (default 300)                                               |
+| `CALL_WINDOW_START_HOUR`, `CALL_WINDOW_END_HOUR`                                                      | Permitted scheduling window, local time (default 9–20)                                            |
+| `MAX_CALLS_PER_PHONE_PER_DAY`                                                                         | Anti-spam per target number (default 3)                                                           |
+| `MAX_CALLS_PER_USER_PER_DAY`                                                                          | Per-user quota (admins exempt, default 20)                                                        |
+| `TEST_PHONE_OVERRIDE`                                                                                 | When set, every call is redirected to this number (demos/testing)                                 |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`                                                | Email (SMTP)                                                                                      |
+| `EMAIL_FROM`, `EMAIL_FROM_NAME`, `EMAIL_ENABLED`                                                      | Email sender config                                                                               |
+| `FEEDBACK_EMAILS`                                                                                     | Comma-separated emails for feedback forwarding                                                    |
+| `BASE_URL`                                                                                            | Backend base URL (used for Twilio callbacks + Media Stream WebSocket URL)                         |
+| `CORS_ORIGINS`                                                                                        | Allowed CORS origins (comma-separated)                                                            |
+| `RATE_LIMIT_PER_MINUTE`                                                                               | API rate limit per IP (default 60)                                                                |
+| `LOG_LEVEL`                                                                                           | Logging level (default INFO)                                                                      |
 
 See `.env.example` for defaults and annotations.
 
@@ -441,37 +458,37 @@ See `.env.example` for defaults and annotations.
 
 ## Safety & Reliability
 
-| Guard | Setting | Purpose |
-|---|---|---|
-| **AI disclosure** | `AI_DISCLOSURE_REQUIRED=true` | Agent identifies as automated in its first sentence |
-| **Max call duration** | `MAX_CALL_DURATION_SECONDS` | Watchdog triggers graceful farewell + hangup |
-| **Business hours** | `CALL_WINDOW_START_HOUR`, `CALL_WINDOW_END_HOUR` | Rejects scheduling calls outside the window |
-| **Per-phone rate limit** | `MAX_CALLS_PER_PHONE_PER_DAY` | Blocks excess tasks to the same number in 24 h |
-| **Per-user quota** | `MAX_CALLS_PER_USER_PER_DAY` | Stops a single user from draining credits |
-| **Concurrency cap** | `MAX_CONCURRENT_CALLS` | Process-local semaphore |
-| **Voicemail detection** | Twilio AMD | Hangs up automatically when an answering machine is detected |
-| **Exponential backoff retry** | 1 → 5 → 30 → 120 min, max 4 attempts | Only for errors containing connection / timeout / network / refused / retries / realtime_init_failed |
-| **Stuck-in-progress cleanup** | 10 min | Scheduler flips to FAILED if a call never finalized |
-| **Realtime → legacy fallback** | on `[REALTIME_INIT_FAILED]` | Next retry automatically uses the legacy path |
-| **Test phone override** | `TEST_PHONE_OVERRIDE` | Redirects every call to a sandbox number |
+| Guard                          | Setting                                          | Purpose                                                                                              |
+|--------------------------------|--------------------------------------------------|------------------------------------------------------------------------------------------------------|
+| **AI disclosure**              | `AI_DISCLOSURE_REQUIRED=true`                    | Agent identifies as automated in its first sentence                                                  |
+| **Max call duration**          | `MAX_CALL_DURATION_SECONDS`                      | Watchdog triggers graceful farewell + hangup                                                         |
+| **Business hours**             | `CALL_WINDOW_START_HOUR`, `CALL_WINDOW_END_HOUR` | Rejects scheduling calls outside the window                                                          |
+| **Per-phone rate limit**       | `MAX_CALLS_PER_PHONE_PER_DAY`                    | Blocks excess tasks to the same number in 24 h                                                       |
+| **Per-user quota**             | `MAX_CALLS_PER_USER_PER_DAY`                     | Stops a single user from draining credits                                                            |
+| **Concurrency cap**            | `MAX_CONCURRENT_CALLS`                           | Process-local semaphore                                                                              |
+| **Voicemail detection**        | Twilio AMD                                       | Hangs up automatically when an answering machine is detected                                         |
+| **Exponential backoff retry**  | 1 → 5 → 30 → 120 min, max 4 attempts             | Only for errors containing connection / timeout / network / refused / retries / realtime_init_failed |
+| **Stuck-in-progress cleanup**  | 10 min                                           | Scheduler flips to FAILED if a call never finalized                                                  |
+| **Realtime → legacy fallback** | on `[REALTIME_INIT_FAILED]`                      | Next retry automatically uses the legacy path                                                        |
+| **Test phone override**        | `TEST_PHONE_OVERRIDE`                            | Redirects every call to a sandbox number                                                             |
 
 ---
 
 ## Docker Architecture
 
 ```
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  qc_frontend │  │   qc_api     │  │  qc_worker   │
-│  (nginx:80)  │  │ (uvicorn:8K) │  │ (scheduler)  │
-│  port 3000   │  │  port 8000   │  │  background  │
-└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-       │                 │                  │
-       └────────┬────────┴──────────────────┘
-                │
-        ┌───────▼───────┐
-        │  qc_postgres  │
-        │  (port 5432)  │
-        └───────────────┘
+┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐
+│ quiet_call_frontend│  │  quiet_call_api    │  │ quiet_call_worker  │
+│    (nginx:80)      │  │   (uvicorn:8K)     │  │    (scheduler)     │
+│    port 3000       │  │    port 8000       │  │    background      │
+└─────────┬──────────┘  └─────────┬──────────┘  └─────────┬──────────┘
+          │                       │                       │
+          └──────────┬────────────┴───────────────────────┘
+                     │
+              ┌──────▼───────┐
+              │ quiet_call_db│
+              │  (port 5432) │
+              └──────────────┘
 ```
 
 The API container runs `alembic upgrade head` on startup, so new migrations apply automatically.
@@ -481,6 +498,7 @@ The API container runs `alembic upgrade head` on startup, so new migrations appl
 ## Connecting with the Frontend
 
 **With Docker:**
+
 ```bash
 # Backend (this repo)
 make app.start
@@ -490,6 +508,7 @@ make docker.start    # runs at http://localhost:3000
 ```
 
 **Local development:**
+
 ```bash
 # Backend
 make app.start       # or: poetry run python -m app.main
@@ -499,5 +518,6 @@ npm run dev          # runs at http://localhost:5173
 ```
 
 Demo accounts (after `make db.seed.demo`):
+
 - Admin: `ana.gojinevschi@isa.utm.md` / `admin1234`
 - Admin: `annagojinevschi@gmail.com` / `admin1234`

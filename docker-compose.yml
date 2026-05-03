@@ -1,6 +1,6 @@
 services:
-  qc_postgres:
-    container_name: qc_postgres
+  quiet_call_db:
+    container_name: quiet_call_db
     image: postgres:17
     restart: unless-stopped
     ports:
@@ -19,8 +19,8 @@ services:
     networks:
       - quiet_call_net
 
-  qc_api:
-    container_name: qc_api
+  quiet_call_api:
+    container_name: quiet_call_api
     build:
       context: .
       target: base
@@ -30,12 +30,12 @@ services:
     env_file:
       - .env
     environment:
-      DB_HOST: qc_postgres
+      DB_HOST: quiet_call_db
       DB_PORT: 5432
     volumes:
       - app_storage:/app/storage
     depends_on:
-      qc_postgres:
+      quiet_call_db:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header"
@@ -48,8 +48,8 @@ services:
     networks:
       - quiet_call_net
 
-  qc_worker:
-    container_name: qc_worker
+  quiet_call_worker:
+    container_name: quiet_call_worker
     build:
       context: .
       target: base
@@ -57,29 +57,29 @@ services:
     env_file:
       - .env
     environment:
-      DB_HOST: qc_postgres
+      DB_HOST: quiet_call_db
       DB_PORT: 5432
     volumes:
       - app_storage:/app/storage
     depends_on:
-      qc_postgres:
+      quiet_call_db:
         condition: service_healthy
     command: python -m app.worker
     networks:
       - quiet_call_net
 
-  qc_test:
-    container_name: qc_test
+  quiet_call_test:
+    container_name: quiet_call_test
     build:
       context: .
       target: test
     env_file:
       - .env
     environment:
-      DB_HOST: qc_postgres
+      DB_HOST: quiet_call_db
       DB_PORT: 5432
     depends_on:
-      qc_postgres:
+      quiet_call_db:
         condition: service_healthy
     command: pytest --tb=short -v
     profiles:

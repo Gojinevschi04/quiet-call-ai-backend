@@ -1,4 +1,4 @@
-.PHONY: help db.make_migrations db.up db.down db.reset db.seed db.seed.demo black.run ruff.run mypy.run app.start app.stop app.logs app.logs.api app.logs.worker app.test
+.PHONY: help db.make_migrations db.up db.down db.reset db.seed db.seed.demo black.run ruff.run mypy.run app.start app.stop app.logs app.logs.api app.logs.worker app.test ngrok.start
 
 .DEFAULT_GOAL := help
 
@@ -24,14 +24,19 @@ help:
 	@echo "  app.start             Build and start all containers (API, worker, Postgres)"
 	@echo "  app.stop              Stop and remove all containers"
 	@echo "  app.logs              Follow logs from all containers"
-	@echo "  app.logs.api          Follow logs from qc_api only"
-	@echo "  app.logs.worker       Follow logs from qc_worker only"
+	@echo "  app.logs.api          Follow logs from quiet_call_api only"
+	@echo "  app.logs.worker       Follow logs from quiet_call_worker only"
 	@echo "  app.test              Run tests in Docker container"
+	@echo ""
+	@echo "Tunnel Commands:"
+	@echo "  ngrok.start           Start ngrok tunnel on port 8000 with reserved domain"
+	@echo "                        (required for Twilio webhooks during local development)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make db.up                                    # Run migrations"
 	@echo "  make db.make_migrations m='Add user table'   # Create migration"
 	@echo "  make app.start                                # Start entire application"
+	@echo "  make ngrok.start                              # Start ngrok tunnel for Twilio"
 	@echo "  make black.run                                # Format code"
 
 db.make_migrations:
@@ -47,7 +52,7 @@ db.reset:
 	@echo "WARNING: this will DROP the entire 'public' schema and DELETE all data."
 	@read -p "Type 'yes' to continue: " ans && [ "$$ans" = "yes" ] || (echo "Aborted." && exit 1)
 	@echo "Dropping schema public..."
-	@docker exec qc_postgres psql -U app -d app_db -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+	@docker exec quiet_call_db psql -U app -d app_db -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 	@echo "Re-running migrations..."
 	@poetry run alembic upgrade head
 	@echo "Seeding templates + demo..."
@@ -89,11 +94,17 @@ app.logs:
 	@docker compose logs -f
 
 app.logs.api:
-	@docker compose logs -f qc_api
+	@docker compose logs -f quiet_call_api
 
 app.logs.worker:
-	@docker compose logs -f qc_worker
+	@docker compose logs -f quiet_call_worker
 
 app.test:
 	@echo "Running tests in Docker..."
-	@docker compose --profile test up --build qc_test --abort-on-container-exit --exit-code-from qc_test
+	@docker compose --profile test up --build quiet_call_test --abort-on-container-exit --exit-code-from quiet_call_test
+
+ngrok.start:
+	@echo "Starting ngrok tunnel on port 8000..."
+	@echo "Public URL: https://magda-pyramidal-everette.ngrok-free.dev"
+	@echo "Press Ctrl+C to stop the tunnel."
+	@ngrok http 8000 --domain=magda-pyramidal-everette.ngrok-free.dev
