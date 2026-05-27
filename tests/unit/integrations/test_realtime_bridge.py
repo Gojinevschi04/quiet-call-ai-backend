@@ -292,6 +292,7 @@ async def test_run_sets_init_failed_true_when_openai_connect_raises() -> None:
 async def test_report_outcome_ignores_duplicate_call() -> None:
     """Regression: a second report_outcome call must not overwrite the first."""
     import json
+
     bridge = _make_bridge()
     bridge.openai_ws = AsyncMock()
     bridge.openai_ws.send = AsyncMock()
@@ -319,6 +320,7 @@ async def test_report_outcome_ignores_duplicate_call() -> None:
 async def test_run_persists_partial_transcript_on_openai_disconnect() -> None:
     """Regression: if OpenAI WS closes mid-call, captured transcript survives to finalize."""
     import websockets
+
     bridge = _make_bridge()
     bridge.transcript_buffer = [
         {"speaker": "agent", "text": "Hello.", "timestamp": "2026-04-21T12:00:00"},
@@ -327,7 +329,8 @@ async def test_run_persists_partial_transcript_on_openai_disconnect() -> None:
 
     with patch("app.integrations.realtime_bridge.websockets.connect") as mock_connect:
         mock_connect.side_effect = websockets.exceptions.ConnectionClosed(
-            rcvd=None, sent=None,
+            rcvd=None,
+            sent=None,
         )
         await bridge.run()
 
@@ -344,8 +347,10 @@ async def test_backup_hangup_fires_when_drain_never_completes() -> None:
     bridge.call_sid = "CA123"
     bridge._hangup_pending = True
 
-    with patch.object(bridge_module, "HANGUP_BACKUP_TIMEOUT_SECONDS", 0.05), \
-         patch("app.integrations.realtime_bridge.TwilioAdapter") as mock_adapter_cls:
+    with (
+        patch.object(bridge_module, "HANGUP_BACKUP_TIMEOUT_SECONDS", 0.05),
+        patch("app.integrations.realtime_bridge.TwilioAdapter") as mock_adapter_cls,
+    ):
         mock_adapter = mock_adapter_cls.return_value
         mock_adapter.hangup = AsyncMock()
 
@@ -365,8 +370,10 @@ async def test_backup_hangup_skips_when_drain_already_succeeded() -> None:
     bridge.call_sid = "CA123"
     bridge._hangup_done = True  # simulate drain path already fired
 
-    with patch.object(bridge_module, "HANGUP_BACKUP_TIMEOUT_SECONDS", 0.05), \
-         patch("app.integrations.realtime_bridge.TwilioAdapter") as mock_adapter_cls:
+    with (
+        patch.object(bridge_module, "HANGUP_BACKUP_TIMEOUT_SECONDS", 0.05),
+        patch("app.integrations.realtime_bridge.TwilioAdapter") as mock_adapter_cls,
+    ):
         mock_adapter = mock_adapter_cls.return_value
         mock_adapter.hangup = AsyncMock()
 

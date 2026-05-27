@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
@@ -15,7 +15,7 @@ def _to_naive_utc(value: datetime) -> datetime:
     with `datetime.now()` (server runs in UTC in Docker) and stored by Postgres as
     TIMESTAMP WITHOUT TIME ZONE. Naive inputs are assumed to already be in UTC."""
     if value.tzinfo is not None:
-        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        value = value.astimezone(UTC).replace(tzinfo=None)
     return value
 
 
@@ -25,7 +25,7 @@ def _local_hour(value: datetime) -> int:
     from app.core.config import settings
 
     tz = ZoneInfo(settings.CALL_WINDOW_TIMEZONE)
-    utc_aware = value.replace(tzinfo=timezone.utc)
+    utc_aware = value.replace(tzinfo=UTC)
     return utc_aware.astimezone(tz).hour
 
 
@@ -104,9 +104,7 @@ class TaskBase(BaseModel):
         if v <= now:
             raise ValueError("Scheduled time must be in the future")
         if v > now + timedelta(days=MAX_SCHEDULED_DAYS_IN_FUTURE):
-            raise ValueError(
-                f"Scheduled time cannot be more than {MAX_SCHEDULED_DAYS_IN_FUTURE} days in the future"
-            )
+            raise ValueError(f"Scheduled time cannot be more than {MAX_SCHEDULED_DAYS_IN_FUTURE} days in the future")
         from app.core.config import settings
 
         if not (settings.CALL_WINDOW_START_HOUR <= _local_hour(v) < settings.CALL_WINDOW_END_HOUR):
@@ -167,9 +165,7 @@ class TaskEditRequest(BaseModel):
         if v <= now:
             raise ValueError("Scheduled time must be in the future")
         if v > now + timedelta(days=MAX_SCHEDULED_DAYS_IN_FUTURE):
-            raise ValueError(
-                f"Scheduled time cannot be more than {MAX_SCHEDULED_DAYS_IN_FUTURE} days in the future"
-            )
+            raise ValueError(f"Scheduled time cannot be more than {MAX_SCHEDULED_DAYS_IN_FUTURE} days in the future")
         from app.core.config import settings
 
         if not (settings.CALL_WINDOW_START_HOUR <= _local_hour(v) < settings.CALL_WINDOW_END_HOUR):
@@ -224,9 +220,7 @@ class TaskDuplicateRequest(BaseModel):
         if scheduled_time <= now:
             raise ValueError("Scheduled time must be in the future")
         if scheduled_time > now + timedelta(days=MAX_SCHEDULED_DAYS_IN_FUTURE):
-            raise ValueError(
-                f"Scheduled time cannot be more than {MAX_SCHEDULED_DAYS_IN_FUTURE} days in the future"
-            )
+            raise ValueError(f"Scheduled time cannot be more than {MAX_SCHEDULED_DAYS_IN_FUTURE} days in the future")
         from app.core.config import settings
 
         if not (settings.CALL_WINDOW_START_HOUR <= _local_hour(scheduled_time) < settings.CALL_WINDOW_END_HOUR):
@@ -264,7 +258,7 @@ class TaskResponse(BaseModel):
         if value is None:
             return None
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
+            value = value.replace(tzinfo=UTC)
         return value.isoformat().replace("+00:00", "Z")
 
 

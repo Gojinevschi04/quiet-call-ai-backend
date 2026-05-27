@@ -32,8 +32,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         """Drop IPs whose window has fully elapsed; enforce MAX_TRACKED_IPS cap."""
         stale_cutoff = now - self.window
         expired_ips = [
-            ip for ip, timestamps in self._requests.items()
-            if not timestamps or timestamps[-1] < stale_cutoff
+            ip for ip, timestamps in self._requests.items() if not timestamps or timestamps[-1] < stale_cutoff
         ]
         for ip in expired_ips:
             del self._requests[ip]

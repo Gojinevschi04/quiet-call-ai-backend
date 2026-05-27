@@ -13,7 +13,7 @@ WEBHOOK_ALLOWED_SCHEMES = {"https", "http"}
 WEBHOOK_MAX_URL_LENGTH = 2048
 
 ASSISTANT_NAME_MAX_LENGTH = 40
-ASSISTANT_NAME_FORBIDDEN = set("<>{}\\\"@\n\r\t")
+ASSISTANT_NAME_FORBIDDEN = set('<>{}\\"@\n\r\t')
 ASSISTANT_NAME_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 

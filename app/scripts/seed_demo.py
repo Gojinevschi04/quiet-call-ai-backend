@@ -1443,7 +1443,10 @@ SUMMARY_TEMPLATES: dict[tuple[str, bool], str] = {
     ("Programare la medic", True): (
         "Programare confirmată pentru {patient_name} — {service_type} pe {preferred_date} la {preferred_time}."
     ),
-    ("Programare la medic", False): "Programarea {service_type} pentru {patient_name} nu a putut fi făcută pe {preferred_date}.",
+    (
+        "Programare la medic",
+        False,
+    ): "Programarea {service_type} pentru {patient_name} nu a putut fi făcută pe {preferred_date}.",
     ("Confirmare rezervare", True): "Rezervarea {reservation_id} confirmată pentru {guest_name} pe {reservation_date}.",
     ("Confirmare rezervare", False): "Rezervarea {reservation_id} pentru {guest_name} nu a putut fi confirmată.",
     ("Anulare programare", True): (
@@ -1457,7 +1460,10 @@ SUMMARY_TEMPLATES: dict[tuple[str, bool], str] = {
     ),
     ("Reprogramare programare", False): "Programarea lui {booked_name} nu a putut fi reprogramată.",
     ("Solicitare informații", True): "Informații despre {question_topic} obținute de la {business_name}.",
-    ("Solicitare informații", False): "Informațiile despre {question_topic} nu au putut fi obținute de la {business_name}.",
+    (
+        "Solicitare informații",
+        False,
+    ): "Informațiile despre {question_topic} nu au putut fi obținute de la {business_name}.",
     ("Apel de revenire", True): (
         "Revenire pe {follow_up_topic} (ref {reference_number}) — finalizată cu {contact_name}."
     ),

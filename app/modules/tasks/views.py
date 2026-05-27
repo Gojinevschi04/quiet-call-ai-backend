@@ -121,16 +121,11 @@ async def get_tasks_view(
     sort_by: str | None = None,
     sort_dir: str | None = None,
 ) -> TaskListResponse:
-    tasks, total = await task_service.get_tasks(
-        current_user.id, limit, offset, status, language, sort_by, sort_dir
-    )
+    tasks, total = await task_service.get_tasks(current_user.id, limit, offset, status, language, sort_by, sort_dir)
     template_ids = {task.template_id for task in tasks}
     template_name_by_id = await template_repository.get_names_by_ids(template_ids)
     return TaskListResponse(
-        items=[
-            _task_to_response(task, template_name=template_name_by_id.get(task.template_id))
-            for task in tasks
-        ],
+        items=[_task_to_response(task, template_name=template_name_by_id.get(task.template_id)) for task in tasks],
         total=total,
         limit=limit,
         offset=offset,

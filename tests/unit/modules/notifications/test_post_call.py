@@ -209,7 +209,8 @@ async def test_archive_logs_skips_when_no_call_session(mock_task: Task) -> None:
 
 @pytest.mark.asyncio
 async def test_archive_logs_fetches_log_lines_when_session_exists(
-    mock_task: Task, mock_call_session: CallSession,
+    mock_task: Task,
+    mock_call_session: CallSession,
 ) -> None:
     """_archive_logs: with a call session, log lines are fetched for archival."""
     from app.modules.notifications.post_call import PostCallProcessor

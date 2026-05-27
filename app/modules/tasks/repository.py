@@ -65,9 +65,9 @@ class TaskRepository(Repository):
             query = query.join(DialogTemplate, DialogTemplate.id == Task.template_id).where(
                 DialogTemplate.language == language
             )
-            count_query = count_query.join(
-                DialogTemplate, DialogTemplate.id == Task.template_id
-            ).where(DialogTemplate.language == language)
+            count_query = count_query.join(DialogTemplate, DialogTemplate.id == Task.template_id).where(
+                DialogTemplate.language == language
+            )
 
         query = _apply_task_order(query, sort_by, sort_dir).offset(offset).limit(limit)
 
@@ -133,9 +133,9 @@ class TaskRepository(Repository):
             query = query.join(DialogTemplate, DialogTemplate.id == Task.template_id).where(
                 DialogTemplate.language == language
             )
-            count_query = count_query.join(
-                DialogTemplate, DialogTemplate.id == Task.template_id
-            ).where(DialogTemplate.language == language)
+            count_query = count_query.join(DialogTemplate, DialogTemplate.id == Task.template_id).where(
+                DialogTemplate.language == language
+            )
 
         query = _apply_task_order(query, sort_by, sort_dir).offset(offset).limit(limit)
 

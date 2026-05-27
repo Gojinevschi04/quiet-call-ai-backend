@@ -117,7 +117,5 @@ class LogLineRepository(Repository):
         # completes asynchronously (often after the next agent turn's transcript is done).
         # Rows are inserted in conversation order (see get_ordered_transcript), so id
         # preserves the real back-and-forth sequence.
-        result = await self._session.exec(
-            select(LogLine).where(LogLine.session_id == session_id).order_by(LogLine.id)
-        )
+        result = await self._session.exec(select(LogLine).where(LogLine.session_id == session_id).order_by(LogLine.id))
         return result.all()

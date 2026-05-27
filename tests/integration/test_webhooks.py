@@ -459,11 +459,13 @@ async def test_twilio_status_callback_signature_check_runs_before_db_lookup() ->
         del app.dependency_overrides[verify_twilio_signature]
     db_lookup = AsyncMock(return_value=None)
     try:
-        with real_patch("app.modules.webhooks.views.settings.TWILIO_AUTH_TOKEN", "real-token"), \
-             real_patch(
-                 "app.modules.calls.repository.CallSessionRepository.get_by_task_id",
-                 new=db_lookup,
-             ):
+        with (
+            real_patch("app.modules.webhooks.views.settings.TWILIO_AUTH_TOKEN", "real-token"),
+            real_patch(
+                "app.modules.calls.repository.CallSessionRepository.get_by_task_id",
+                new=db_lookup,
+            ),
+        ):
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as raw:
                 response = await raw.post(
@@ -473,5 +475,8 @@ async def test_twilio_status_callback_signature_check_runs_before_db_lookup() ->
                 assert response.status_code == 403
                 db_lookup.assert_not_called()
     finally:
-        async def _noop() -> None: return None
+
+        async def _noop() -> None:
+            return None
+
         app.dependency_overrides[verify_twilio_signature] = _noop

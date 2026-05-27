@@ -236,11 +236,7 @@ class RealtimeBridge:
                         "transcription": {
                             "model": settings.OPENAI_TRANSCRIPTION_MODEL,
                             "language": self.language,
-                            **(
-                                {"prompt": self.transcription_hint}
-                                if self.transcription_hint
-                                else {}
-                            ),
+                            **({"prompt": self.transcription_hint} if self.transcription_hint else {}),
                         },
                     },
                     "output": {
@@ -416,9 +412,7 @@ class RealtimeBridge:
                     else:
                         self._assistant_turns += 1
                         timeout = (
-                            FIRST_TURN_IDLE_TIMEOUT_SECONDS
-                            if self._assistant_turns == 1
-                            else IDLE_TIMEOUT_SECONDS
+                            FIRST_TURN_IDLE_TIMEOUT_SECONDS if self._assistant_turns == 1 else IDLE_TIMEOUT_SECONDS
                         )
                         self._start_idle_timer(timeout)
 
@@ -506,7 +500,8 @@ class RealtimeBridge:
             if self.outcome is not None:
                 logger.info(
                     "[task=%d] Ignoring duplicate report_outcome call (already %s)",
-                    self.task_id, self.outcome,
+                    self.task_id,
+                    self.outcome,
                 )
                 return
             self.outcome = {

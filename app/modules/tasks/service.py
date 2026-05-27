@@ -42,9 +42,7 @@ class TaskService:
         if not template:
             raise TemplateNotFoundError(f"Template with id {data.template_id} not found")
         if not template.is_active and not allow_inactive_template:
-            raise TemplateNotFoundError(
-                f"Template with id {data.template_id} is deactivated and cannot be used"
-            )
+            raise TemplateNotFoundError(f"Template with id {data.template_id} is deactivated and cannot be used")
 
         missing_slots = [slot for slot in template.required_slots if slot not in data.slot_data]
         if missing_slots:
@@ -98,9 +96,7 @@ class TaskService:
         sort_by: str | None = None,
         sort_dir: str | None = None,
     ) -> tuple[Sequence[Task], int]:
-        return await self.task_repository.get_all_paginated(
-            user_id, limit, offset, status, language, sort_by, sort_dir
-        )
+        return await self.task_repository.get_all_paginated(user_id, limit, offset, status, language, sort_by, sort_dir)
 
     async def edit_task(self, task_id: int, user_id: int, data: TaskEditRequest, is_admin: bool = False) -> Task:
         if is_admin:
@@ -160,9 +156,7 @@ class TaskService:
             raise TaskNotFoundError(f"Task with id {task_id} not found")
 
         if task.status not in (TaskStatus.FAILED, TaskStatus.DEFERRED):
-            raise InvalidTaskDataError(
-                f"Only failed or deferred tasks can be retried (current status: {task.status})"
-            )
+            raise InvalidTaskDataError(f"Only failed or deferred tasks can be retried (current status: {task.status})")
 
         await self._cleanup_old_call_session(task_id)
 

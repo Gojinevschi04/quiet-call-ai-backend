@@ -53,12 +53,15 @@ def test_profile_update_accepts_valid_assistant_name(good_name: str) -> None:
     assert update.assistant_name == good_name
 
 
-@pytest.mark.parametrize("bad_name", [
-    "x" * 41,           # too long
-    "<script>",          # angle brackets
-    "@everyone",         # special chars
-    "\n\ntrick",         # newline injection
-])
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "x" * 41,  # too long
+        "<script>",  # angle brackets
+        "@everyone",  # special chars
+        "\n\ntrick",  # newline injection
+    ],
+)
 def test_profile_update_rejects_bad_assistant_name(bad_name: str) -> None:
     with pytest.raises(Exception):
         ProfileUpdate(assistant_name=bad_name)

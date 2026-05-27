@@ -7,7 +7,7 @@ from sqlmodel import func, select
 
 from app.core.logging import get_logger
 from app.modules.admin.exceptions import UserHasActiveCallError
-from app.modules.calls.models import CallSession, LogLine
+from app.modules.calls.models import CallSession
 from app.modules.calls.pricing import (
     COST_DECIMAL_PLACES,
     SECONDS_PER_MINUTE,
@@ -143,8 +143,16 @@ class AdminService:
         total_duration_seconds = 0
         total_cost_usd = 0.0
         for row in rows:
-            user_id, email, call_count, duration_seconds, input_audio_tokens, output_audio_tokens, \
-                input_text_tokens, output_text_tokens = row
+            (
+                user_id,
+                email,
+                call_count,
+                duration_seconds,
+                input_audio_tokens,
+                output_audio_tokens,
+                input_text_tokens,
+                output_text_tokens,
+            ) = row
             duration_seconds = int(duration_seconds or 0)
             input_audio_tokens = int(input_audio_tokens or 0)
             output_audio_tokens = int(output_audio_tokens or 0)
@@ -170,9 +178,7 @@ class AdminService:
             total_cost_usd += entry_total_cost
 
         total_minutes = total_duration_seconds / SECONDS_PER_MINUTE if total_duration_seconds else 0
-        avg_cost_per_min_usd = (
-            round(total_cost_usd / total_minutes, COST_DECIMAL_PLACES) if total_minutes else 0.0
-        )
+        avg_cost_per_min_usd = round(total_cost_usd / total_minutes, COST_DECIMAL_PLACES) if total_minutes else 0.0
         return {
             "period_start": month_start.isoformat(),
             "per_user": per_user_breakdown,
@@ -193,9 +199,7 @@ class AdminService:
         sort_by: str | None = None,
         sort_dir: str | None = None,
     ) -> tuple[Sequence[Task], int]:
-        return await self.task_repository.get_all_paginated_admin(
-            limit, offset, status, language, sort_by, sort_dir
-        )
+        return await self.task_repository.get_all_paginated_admin(limit, offset, status, language, sort_by, sort_dir)
 
     async def update_user_role(self, user_id: int, role: UserRole) -> User | None:
         return await self.user_repository.update_user_role(user_id, role)
